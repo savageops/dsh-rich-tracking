@@ -125,8 +125,8 @@ window.__ModuleLoader__.load({
 		//#region lib/styles.css
 		const css = `.rt-root{box-sizing:border-box;width:calc(100% - var(--dsh-composer-side-clearance) - var(--dsh-composer-side-clearance) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));max-width:calc(var(--dsh-composer-card-max-width) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-specific-tip);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);border-radius:12px;flex:none;margin:0 auto;overflow:hidden}
 .rt-root,.rt-root *{box-sizing:border-box}
-.rt-body{flex-direction:column;gap:8px;padding:6px 12px;display:flex}
-.rt-header{text-align:left;cursor:pointer;background:0 0;border:none;align-items:center;gap:10px;width:100%;padding:0;display:flex}
+.rt-body{flex-direction:column;gap:0;padding:6px 0 4px;display:flex}
+.rt-header{text-align:left;cursor:pointer;background:0 0;border:none;align-items:center;gap:10px;width:100%;padding:6px 12px;display:flex}
 .rt-header:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px;border-radius:8px}
 .rt-disc{flex:none;width:14px;height:14px;border-radius:50%;background:conic-gradient(var(--rt-fill-color) var(--rt-percent), var(--dsw-alias-interactive-bg-hover) 0);position:relative}
 .rt-disc:after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--dsw-specific-tip)}
@@ -139,9 +139,10 @@ window.__ModuleLoader__.load({
 .rt-iconBtn:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px}
 .rt-iconBtn:disabled{opacity:.45;cursor:default}
 .rt-chevron{color:var(--dsw-alias-label-tertiary);flex:none;place-items:center;display:grid}
-.rt-list{flex-direction:column;gap:8px;max-height:180px;margin:0;padding:0;list-style:none;display:flex;overflow-y:auto}
+.rt-list{flex-direction:column;gap:0;max-height:180px;margin:0;padding:0;list-style:none;display:flex;overflow-y:auto}
 .rt-row:hover,.rt-row:focus-within,.rt-rowOpen{background:var(--dsw-alias-interactive-bg-hover)}
-.rt-row{border-radius:8px;align-items:flex-start;gap:10px;width:100%;padding:2px 6px 2px 2px;display:flex}
+.rt-list .rt-row:last-child{border-bottom:none}
+.rt-row{border-radius:0;align-items:flex-start;gap:10px;width:100%;padding:8px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);display:flex}
 .rt-rowDim{opacity:.55}
 .rt-rowHasItems{cursor:pointer}
 .rt-rowHasItems:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px}
@@ -172,14 +173,14 @@ window.__ModuleLoader__.load({
 .rt-row:hover .rt-rowActions,.rt-row:focus-within .rt-rowActions{visibility:visible}
 .rt-rowNote{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;overflow-wrap:anywhere}
 .rt-rowEvidence{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;overflow-wrap:anywhere;opacity:.85}
-.rt-checkpoint{border-top:1px solid var(--dsw-alias-border-l1);padding:6px 0 2px;display:flex;flex-direction:column;gap:3px}
+.rt-checkpoint{border-top:1px solid var(--dsw-alias-border-l1);padding:8px 12px 2px;display:flex;flex-direction:column;gap:3px}
 .rt-cpLine{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:16px;overflow-wrap:anywhere}
 .rt-cpSince{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;overflow-wrap:anywhere}
 .rt-cpToggle{color:var(--dsw-alias-state-business-primary);cursor:pointer;background:0 0;border:none;border-radius:6px;font-size:12px;line-height:16px;padding:1px 4px;justify-content:flex-start;width:max-content}
 .rt-cpToggle:hover{text-decoration:underline}
 .rt-frozen{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-markdown-code-block);padding:6px 10px;display:flex;flex-direction:column;gap:2px}
 .rt-frozenRow{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:17px;display:flex;justify-content:space-between;gap:10px}
-.rt-status{min-height:16px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px}
+.rt-status{min-height:16px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;padding:0 12px}
 .rt-statusOk{color:var(--dsw-alias-state-success-primary)}
 .rt-statusError{color:var(--dsw-alias-state-error-primary)}`;
 		const tagId = "dsh-rich-tracking/board.css";
