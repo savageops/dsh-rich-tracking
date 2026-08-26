@@ -81,7 +81,7 @@ window.__ModuleLoader__.load({
 		const css = `.rt-root{box-sizing:border-box;width:calc(100% - var(--dsh-composer-side-clearance) - var(--dsh-composer-side-clearance) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));max-width:calc(var(--dsh-composer-card-max-width) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-specific-tip);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);border-radius:12px;flex:none;margin:0 auto;overflow:hidden}
 .rt-root,.rt-root *{box-sizing:border-box}
 .rt-body{flex-direction:column;gap:8px;padding:6px 12px;display:flex}
-.rt-header{text-align:left;cursor:pointer;background:0 0;border:none;align-items:center;gap:10px;width:100%;min-height:36px;padding:6px 0;display:flex}
+.rt-header{text-align:left;cursor:pointer;background:0 0;border:none;align-items:center;gap:10px;width:100%;padding:0;display:flex}
 .rt-header:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px;border-radius:8px}
 .rt-disc{flex:none;width:14px;height:14px;border-radius:50%;background:conic-gradient(var(--rt-fill-color) var(--rt-percent), var(--dsw-alias-interactive-bg-hover) 0);position:relative}
 .rt-disc:after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--dsw-specific-tip)}
@@ -94,13 +94,14 @@ window.__ModuleLoader__.load({
 .rt-iconBtn:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px}
 .rt-iconBtn:disabled{opacity:.45;cursor:default}
 .rt-chevron{color:var(--dsw-alias-label-tertiary);flex:none;place-items:center;display:grid}
-.rt-list{flex-direction:column;gap:4px;max-height:180px;margin:0;padding:0 0 2px;list-style:none;display:flex;overflow-y:auto}
-.rt-row{border-radius:8px;align-items:flex-start;gap:10px;width:100%;padding:4px 6px 4px 2px;display:flex}
+.rt-list{flex-direction:column;gap:8px;max-height:180px;margin:0;padding:0;list-style:none;display:flex;overflow-y:auto}
+.rt-row{border-radius:8px;align-items:flex-start;gap:10px;width:100%;padding:2px 6px 2px 2px;display:flex}
 .rt-row:hover,.rt-row:focus-within{background:var(--dsw-alias-interactive-bg-hover)}
 .rt-rowDim{opacity:.55}
 .rt-glyph{flex:none;place-items:center;width:16px;height:16px;margin-top:2px;display:grid}
 .rt-glyphDone{color:var(--dsw-alias-state-success-primary)}
-.rt-glyphActive{color:var(--dsw-alias-state-business-primary);animation:rt-spin 2s linear infinite}
+.rt-glyphActive{color:var(--dsw-alias-state-business-primary)}
+.rt-glyphActive svg{animation:rt-spin 1s linear infinite}
 .rt-glyphBlocked{color:var(--dsw-alias-state-warn-primary,var(--dsw-alias-state-error-primary))}
 .rt-glyphPending{color:var(--dsw-alias-label-caption)}
 @keyframes rt-spin{to{transform:rotate(360deg)}}
@@ -135,12 +136,44 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region lib/components.js
-		/** Row status glyph, todo grammar: spinner-class for active, check for done, warning for blocked, hollow circle for pending. */
+		/** Glyphs cloned from the built-in TodoPanel (native SVGs, not primitive icons): gradient spinner ring, circle-check, dashed pending ring. */
+		function ProgressGlyph() {
+			const gradientId = (0, react.useId)();
+			return (0, react_jsx_runtime.jsxs)("svg", {
+				width: 14, height: 14, viewBox: "0 0 14 14", fill: "none", "aria-hidden": "true",
+				children: [
+					(0, react_jsx_runtime.jsx)("defs", { children: (0, react_jsx_runtime.jsxs)("linearGradient", {
+						id: gradientId, x1: "2.5", y1: "12", x2: "10.5", y2: "3.5", gradientUnits: "userSpaceOnUse",
+						children: [
+							(0, react_jsx_runtime.jsx)("stop", { stopColor: "currentColor" }),
+							(0, react_jsx_runtime.jsx)("stop", { offset: "1", stopColor: "currentColor", stopOpacity: "0" })
+						]
+					}) }),
+					(0, react_jsx_runtime.jsx)("circle", { cx: "7", cy: "7", r: "6.4", stroke: `url(#${gradientId})`, strokeWidth: "1.2" })
+				]
+			});
+		}
+		function CompletedGlyph() {
+			return (0, react_jsx_runtime.jsxs)("svg", {
+				width: 14, height: 14, viewBox: "0 0 14 14", fill: "none", "aria-hidden": "true",
+				children: [
+					(0, react_jsx_runtime.jsx)("circle", { cx: "7", cy: "7", r: "6.4", stroke: "currentColor", strokeWidth: "1.2" }),
+					(0, react_jsx_runtime.jsx)("path", { d: "M10.9631 5.71411L7.70154 8.97571C7.48011 9.19714 7.27736 9.40099 7.09229 9.54993C6.89742 9.70669 6.66314 9.85279 6.3634 9.90027C6.2049 9.92534 6.04339 9.92534 5.88489 9.90027C5.58515 9.85279 5.35087 9.70669 5.15601 9.54993C4.97093 9.40099 4.76818 9.19714 4.54675 8.97571L3.03516 7.46411L3.96313 6.53613L5.47473 8.04773C5.7169 8.28989 5.86196 8.43389 5.97888 8.52795C6.08597 8.61409 6.10875 8.60701 6.08997 8.604C6.11259 8.60758 6.13571 8.60758 6.15833 8.604C6.13954 8.60701 6.16232 8.61409 6.26941 8.52795C6.38633 8.43389 6.53139 8.28989 6.77356 8.04773L10.0352 4.78613L10.9631 5.71411Z", fill: "currentColor" })
+				]
+			});
+		}
+		function PendingGlyph() {
+			return (0, react_jsx_runtime.jsx)("svg", {
+				width: 14, height: 14, viewBox: "0 0 14 14", fill: "none", "aria-hidden": "true",
+				children: (0, react_jsx_runtime.jsx)("circle", { cx: "7", cy: "7", r: "6.4", stroke: "currentColor", strokeWidth: "1.2", strokeDasharray: "2.4 2.4" })
+			});
+		}
+		/** Row status glyph, TodoPanel grammar: gradient spinner for active, circle-check for done, warning for blocked, dashed ring for pending. */
 		function RowGlyph({ status }) {
-			if (status === "done") return (0, react_jsx_runtime.jsx)("span", { className: cx("rt-glyph", "rt-glyphDone"), children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCheckOutline16, {}) });
-			if (status === "active") return (0, react_jsx_runtime.jsx)("span", { className: cx("rt-glyph", "rt-glyphActive"), "aria-hidden": "true", children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconBranchOutline16, {}) });
-			if (status === "blocked") return (0, react_jsx_runtime.jsx)("span", { className: cx("rt-glyph", "rt-glyphBlocked"), children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconWarningOutline16, {}) });
-			return (0, react_jsx_runtime.jsx)("span", { className: cx("rt-glyph", "rt-glyphPending"), "aria-hidden": "true", children: (0, react_jsx_runtime.jsx)("span", { style: { width: 8, height: 8, borderRadius: "50%", border: "1.5px solid currentColor", display: "block" } }) });
+			if (status === "done") return (0, react_jsx_runtime.jsx)("span", { className: "rt-glyph rt-glyphDone", children: (0, react_jsx_runtime.jsx)(CompletedGlyph, {}) });
+			if (status === "active") return (0, react_jsx_runtime.jsx)("span", { className: "rt-glyph rt-glyphActive", children: (0, react_jsx_runtime.jsx)(ProgressGlyph, {}) });
+			if (status === "blocked") return (0, react_jsx_runtime.jsx)("span", { className: "rt-glyph rt-glyphBlocked", children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconWarningOutline16, { size: 14 }) });
+			return (0, react_jsx_runtime.jsx)("span", { className: "rt-glyph rt-glyphPending", children: (0, react_jsx_runtime.jsx)(PendingGlyph, {}) });
 		}
 		/** Tooltip-wrapped icon action (exemplar PreflightButton pattern: 500ms tooltip naming verb + consequence). */
 		function ActionButton({ label, hint, disabled, onClick, children }) {
@@ -162,6 +195,7 @@ window.__ModuleLoader__.load({
 		function BoardRow({ row, busy, onAction, t }) {
 			return (0, react_jsx_runtime.jsxs)("li", {
 				className: cx("rt-row", row.dimmed && "rt-rowDim"),
+				"data-status": row.status,
 				children: [
 					(0, react_jsx_runtime.jsx)(RowGlyph, { status: row.status }),
 					(0, react_jsx_runtime.jsxs)("span", {
@@ -331,7 +365,7 @@ window.__ModuleLoader__.load({
 											onClick: () => act("dismiss"),
 											children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTrashOutline16, {})
 										}),
-										(0, react_jsx_runtime.jsx)("span", { className: "rt-chevron", children: expanded ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronUpOutline14, {}) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, {}) })
+										(0, react_jsx_runtime.jsx)("span", { className: "rt-chevron", "aria-hidden": "true", children: expanded ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, {}) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronUpOutline14, {}) })
 									]
 								})
 							]
