@@ -1,0 +1,14 @@
+# dsh-rich-tracking bundle patch: inserts the dual-face plugin row.
+#
+# Node half (exports "."): tracking_write + tracking_checkpoint tools, the
+# 'tracking' session projection, the periodic refresh reminder, and the
+# loopback-fenced /api/rich-tracking/action route.
+#
+# Browser half (exports "./client"): the scoreboard dock entry at
+# conversation.input.dock order 5 (below the todo pill, above the goal bar).
+#
+# Deactivate from the profile's own cordis.patch.yml (later layer wins) or the
+# plugin-manager toggle:  { id: rich-tracking, disabled: true }
+- insert:
+    - id: rich-tracking
+      name: dsh-rich-tracking
