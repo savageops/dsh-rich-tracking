@@ -75,6 +75,10 @@ cordis.patch.yml       Bundle patch inserting the plugin row.
 
 State is session events (`tracking/write`, `tracking/checkpoint`, `tracking/decision`) — persistence, reload, and fork ride the existing JSONL log; the client subscribes through the projection wire. Forks inherit the board and evolve independently.
 
+## How updates flow
+
+No refresh, no polling: `tracking_write` appends a session event → the projection recomputes → the dock receives the new view on the same wire the todo panel uses. The board moves the moment the agent writes it — and so does the whip: pressing pursue/align appends a decision and delivers the instruction to the agent's next step (steer when running, followup when idle, quiet inject for dismissals), rendered in the transcript as an attributed context node, never a fake user message.
+
 ## License
 
 [MIT](LICENSE)
