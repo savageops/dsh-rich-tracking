@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "documents": [
+    {
+      "id": "d409f89b-2e6f-46e7-babe-8f52f1b93a05",
+      "title": "dsh-rich-tracking v0.2–v0.3 — row items, /track ledger sync, row delegation (checkpoint handoff)",
+      "description": "Implementation handoff for dsh-rich-tracking v0.2 (expandable row items, item-weighted completion) + v0.3 (/track command, per-row delegate, default submit injection): features, DSH plugin-command research, and the completed restart/runtime verification (board r6 = 100%).",
+      "status": "active",
+      "filename": "dsh-rich-tracking-v0-2-0-expandable-row-items-it-d409f89b.md",
+      "relativePath": "documents/active/dsh-rich-tracking-v0-2-0-expandable-row-items-it-d409f89b.md",
+      "sourcePaths": [
+        "src/tracking-engine.js",
+        "src/host.js",
+        "src/client.bundle.js",
+        "src/tracking-engine.test.mjs",
+        "README.md",
+        "package.json"
+      ],
+      "sessionIds": [
+        "5fbc4bca-3ae7-46a4-a254-89da9f8bfd1e",
+        "7e114825-7321-4c76-bddc-e6bbe9b6beb5",
+        "17db9b73-8223-495c-8baa-8638f4fe864c"
+      ],
+      "createdAt": "2026-08-26T14:15:31.575Z",
+      "updatedAt": "2026-08-26T15:35:13.660Z",
+      "lastAccessedAt": "2026-08-26T15:35:13.660Z",
+      "revision": 3,
+      "contentHash": "808c2abc009e4abb825da33c6e7632c33786afabe6fe092cbff618c75d199971",
+      "sizeBytes": 7251,
+      "memoryBodyIds": []
+    }
+  ]
+}

@@ -206,7 +206,9 @@ function trackingWriteTool() {
       const revision = nextRevision(session.events)
       const lastCheckpoint = lastTrackingEvent(session.events, 'tracking/checkpoint')?.data ?? null
       const ahead = await commitsAheadOf(lastCheckpoint, gitState?.head ?? null, cwd)
-      session.append('tracking/write', { revision, rows: check.board.rows, note: check.board.note, git: gitState, commitsAhead: ahead, at: Date.now() })
+      // ignorable marks the custom type for the cold loader (out-of-repo
+      // vocabulary); live consumers still fold it through session/event.
+      session.append('tracking/write', { revision, rows: check.board.rows, note: check.board.note, git: gitState, commitsAhead: ahead, at: Date.now() }, { ignorable: true })
       return {
         rows: check.board.rows,
         overallPercent: overallPercentOf(check.board.rows),
@@ -280,7 +282,7 @@ function trackingCheckpointTool() {
       const prior = lastTrackingEvent(session.events, 'tracking/checkpoint')?.data ?? null
       const commitsSincePrior = await commitsAheadOf(prior, gitState?.head ?? null, session.header?.cwd)
       const id = nextCheckpointId(session.events)
-      session.append('tracking/checkpoint', { id, label, git: gitState, rows, commitsSincePrior, at: Date.now() })
+      session.append('tracking/checkpoint', { id, label, git: gitState, rows, commitsSincePrior, at: Date.now() }, { ignorable: true })
       return { id, label, git: gitState, boardPercent: overallPercentOf(rows), rows: rows.length }
     },
     presentCall: (args) => ({ card: 'generic', title: 'Take tracking checkpoint', kind: 'other', rawInput: args.label ?? '' }),
@@ -317,6 +319,12 @@ function instructionFor(kind, view, rowId) {
   }
   if (kind === 'dismiss') {
     return '[rich-tracking | dismiss] The operator dismissed the tracking board. Stop updating it; do not call tracking_write unless the operator asks to re-open tracking.'
+  }
+  if (kind === 'play') {
+    return '[rich-tracking | play] PLAY MODE is ON. After this turn ends, and after every subsequent turn, the board will automatically re-engage you with the highest-value next work. Pick the lowest-hanging fruit with the highest value ratio from the pending rows and work on it now.'
+  }
+  if (kind === 'pause') {
+    return '[rich-tracking | pause] PLAY MODE is OFF. Work normally; the board will not auto-engage you after turns.'
   }
   return null
 }
@@ -390,6 +398,40 @@ function installRefreshReminder(ctx) {
       entry.steps += 1
       entry.outputTokens += Number(event.data?.usage?.outputTokens ?? 0)
     }
+  })
+
+  // PLAY MODE: on turn/end, if playMode is active and there's pending work,
+  // auto-engage the agent with the highest-value lowest-effort next step.
+  ctx.on('session/event', (session, event) => {
+    if (event.type !== 'turn/end') return
+    const agent = ctx.agents.get(session.id)
+    if (agent === undefined) return
+    // Read the board from the session's event log
+    let state = null
+    for (const e of session.events) state = foldTracking(state, e)
+    const view = boardView(state)
+    if (view === null || view.present !== true) return
+    if (view.playMode !== true) return
+    if (view.allDone === true) return
+    // Find the lowest-hanging fruit: pending/active rows with the highest value ratio
+    const pending = view.rows.filter((row) => row.percent < 100 && row.status !== 'blocked')
+    if (pending.length === 0) return
+    // Sort by: active first (already started = closer to done), then by percent descending (higher percent = less work remaining)
+    const ranked = pending.sort((a, b) => (b.status === 'active' ? 1 : 0) - (a.status === 'active' ? 1 : 0) || b.percent - a.percent)
+    const best = ranked[0]
+    const rowsSummary = view.rows.map((row) => `${row.label} ${row.percent}% (${row.status})`).join('; ')
+    const message = createPluginMessage(
+      `[rich-tracking | auto-engage] Play mode is active. Current board: ${rowsSummary}. Pick up the lowest-hanging fruit with the highest value ratio: "${best.label}" (${best.percent}%, ${best.status}) — it is the closest to completion or the easiest to advance. Work on it now, then call tracking_write with refreshed percents.`,
+      'followup',
+      'play-mode engage',
+    )
+    // Small delay so the turn fully settles before the followup opens the next one
+    setTimeout(() => {
+      try {
+        if (agent.status === 'idle') agent.followup(message)
+        else agent.steer(message)
+      } catch { /* agent may have been disposed */ }
+    }, 1500)
   })
 
   ctx.on('agent/pre-step', ({ agent, messages }, next) => {
@@ -508,7 +550,7 @@ export function apply(ctx) {
           writeJson(res, 400, { ok: false, error: 'invalid-action' })
           return
         }
-        const kinds = new Set(['pursue', 'delegate', 'align', 'dismiss', 'dismiss-row', 'checkpoint-request'])
+        const kinds = new Set(['pursue', 'delegate', 'align', 'dismiss', 'dismiss-row', 'checkpoint-request', 'play', 'pause'])
         if (kinds.has(body.kind) === false) { writeJson(res, 400, { ok: false, error: 'unknown-action' }); return }
 
         const agent = ctx.agents.get(body.sessionId)
@@ -522,9 +564,9 @@ export function apply(ctx) {
         const instruction = instructionFor(body.kind, view, body.rowId)
         if (instruction === null) { writeJson(res, 400, { ok: false, error: 'row-not-found' }); return }
 
-        agent.session.append('tracking/decision', { kind: body.kind, rowId: body.rowId ?? null, instruction, at: Date.now() })
+        agent.session.append('tracking/decision', { kind: body.kind, rowId: body.rowId ?? null, instruction, at: Date.now() }, { ignorable: true })
 
-        const whip = body.kind === 'pursue' || body.kind === 'delegate' || body.kind === 'align' || body.kind === 'checkpoint-request'
+        const whip = body.kind === 'pursue' || body.kind === 'delegate' || body.kind === 'align' || body.kind === 'checkpoint-request' || body.kind === 'play' || body.kind === 'pause'
         if (whip === true) {
           const message = createPluginMessage(instruction, 'steer', `${body.kind}${body.rowId !== undefined && body.rowId !== null ? ` ${body.rowId}` : ''}`)
           if (agent.status === 'running') agent.steer(message)

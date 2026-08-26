@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "content": "dsh-rich-tracking plugin (v0.3.0, repo /home/sysadmin/.dsh/plugins/dsh-rich-tracking, branch main): rows may carry items [{label,done}] — percent must equal round(done/total×100) (validation rejects mismatches); overall completion is item-weighted (itemless rows contribute percent/100 as one unit); /track chat command injects full ledger + doctrine into the next step; per-row Delegate sends the row to a background subagent (read/write, self-contained brief, subagent keeps its own tracking_write board); while a live board exists every user submit carries a one-line board reminder; plugin code loads only at dsh web process boot — restart required after changes.",
+      "created_at": "2026-08-26T15:35:13.677Z",
+      "updated_at": "2026-08-26T15:35:13.677Z",
+      "target": "memory",
+      "importance": "normal"
+    }
+  ]
+}

@@ -60,6 +60,8 @@ window.__ModuleLoader__.load({
 			"action.dismiss.hint": "Dismiss the whole board (a later tracking_write re-opens it).",
 			"action.dismissRow.hint": "Dismiss this row from the board.",
 			"action.checkpoint": "Checkpoint",
+			"action.play": "Play — auto-engage highest-value work after each turn",
+			"action.pause": "Pause — stop auto-engaging",
 			"action.checkpoint.hint": "Ask the agent to take a tracking checkpoint now (host captures git + board).",
 			"checkpoint.since": "since checkpoint",
 			"checkpoint.commits": "commits",
@@ -100,6 +102,8 @@ window.__ModuleLoader__.load({
 			"action.dismiss.hint": "关闭整个看板（之后任何 tracking_write 会重新打开它）。",
 			"action.dismissRow.hint": "从看板上移除该行。",
 			"action.checkpoint": "检查点",
+			"action.play": "播放——每回合自动推进最高价值工作",
+			"action.pause": "暂停——停止自动推进",
 			"action.checkpoint.hint": "让 agent 现在就打一个进度检查点（宿主抓取 git + 看板）。",
 			"checkpoint.since": "自检查点以来",
 			"checkpoint.commits": "个提交",
@@ -139,6 +143,9 @@ window.__ModuleLoader__.load({
 .rt-root:not([data-expanded]) .rt-headerActions{margin-bottom:-6px}
 .rt-headerActions .rt-iconBtn{width:34px;height:auto;min-height:36px;border-radius:0;border-left:1px solid var(--dsw-alias-border-l1)}
 .rt-headerActions .rt-chevron{border-left:1px solid var(--dsw-alias-border-l1);width:34px}
+.rt-headerActions .rt-playBtn{color:var(--dsw-alias-state-success-primary)}
+.rt-headerActions .rt-playBtn svg{animation:rt-play-pulse 2s ease-in-out infinite}
+@keyframes rt-play-pulse{0%,100%{opacity:1}50%{opacity:.5}}
 .rt-iconBtn{width:24px;height:24px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;border-radius:999px;place-items:center;padding:0;display:grid}
 .rt-iconBtn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .rt-iconBtn:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px}
@@ -452,6 +459,13 @@ window.__ModuleLoader__.load({
 								(0, react_jsx_runtime.jsxs)("span", {
 									className: "rt-headerActions",
 									children: [
+										(0, react_jsx_runtime.jsx)(ActionButton, {
+											label: view.playMode === true ? t("action.pause") : t("action.play"),
+											hint: view.playMode === true ? t("action.pause") : t("action.play"),
+											disabled: busy !== null,
+											onClick: () => act(view.playMode === true ? "pause" : "play"),
+											children: view.playMode === true ? (0, react_jsx_runtime.jsx)("span", { className: "rt-playBtn", children: (0, react_jsx_runtime.jsx)("svg", { width: "12", height: "12", viewBox: "0 0 12 12", "aria-hidden": "true", children: [(0, react_jsx_runtime.jsx)("rect", { x: "1", y: "1", width: "3.5", height: "10", rx: "0.5", fill: "currentColor" }), (0, react_jsx_runtime.jsx)("rect", { x: "7.5", y: "1", width: "3.5", height: "10", rx: "0.5", fill: "currentColor" })] }) }) : (0, react_jsx_runtime.jsx)("svg", { width: "12", height: "12", viewBox: "0 0 12 12", "aria-hidden": "true", children: (0, react_jsx_runtime.jsx)("path", { d: "M2.5 1.5v9l8-4.5z", fill: "currentColor" }) })
+										}),
 										(0, react_jsx_runtime.jsx)(ActionButton, {
 											label: t("action.align"),
 											hint: t("action.align.hint"),

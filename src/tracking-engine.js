@@ -199,7 +199,9 @@ export function foldTracking(state, event) {
   if (event.type === 'tracking/decision') {
     if (state === null) return state
     const data = event.data
-    if (data.kind === 'dismiss') return { ...state, dismissedAt: data.at, lastDecision: { kind: data.kind, rowId: null, at: data.at } }
+    if (data.kind === 'play') return { ...state, playMode: true, lastDecision: { kind: data.kind, rowId: null, at: data.at } }
+    if (data.kind === 'pause') return { ...state, playMode: false, lastDecision: { kind: data.kind, rowId: null, at: data.at } }
+    if (data.kind === 'dismiss') return { ...state, dismissedAt: data.at, playMode: false, lastDecision: { kind: data.kind, rowId: null, at: data.at } }
     if (data.kind === 'dismiss-row') {
       const dismissedRows = state.dismissedRows.includes(data.rowId) ? state.dismissedRows : [...state.dismissedRows, data.rowId]
       return { ...state, dismissedRows, lastDecision: { kind: data.kind, rowId: data.rowId, at: data.at } }
@@ -258,6 +260,7 @@ export function boardView(state) {
     ...(state.lastCheckpoint !== null ? { lastCheckpoint: state.lastCheckpoint } : {}),
     sinceCheckpoint,
     ...(state.lastDecision !== null ? { lastDecision: state.lastDecision } : {}),
+    playMode: state.playMode === true,
     updatedAt: state.updatedAt,
   }
 }
