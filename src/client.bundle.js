@@ -178,13 +178,15 @@ window.__ModuleLoader__.load({
 .rt-row:hover .rt-rowActions,.rt-row:focus-within .rt-rowActions{visibility:visible}
 .rt-rowNote{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;overflow-wrap:anywhere}
 .rt-rowEvidence{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;overflow-wrap:anywhere;opacity:.85}
-.rt-checkpoint{border-top:1px solid var(--dsw-alias-border-l1);padding:8px 12px 2px;display:flex;flex-direction:column;gap:3px}
-.rt-cpLine{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:16px;overflow-wrap:anywhere}
-.rt-cpSince{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;overflow-wrap:anywhere}
-.rt-cpToggle{color:var(--dsw-alias-state-business-primary);cursor:pointer;background:0 0;border:none;border-radius:6px;font-size:12px;line-height:16px;padding:1px 4px;justify-content:flex-start;width:max-content}
+.rt-checkpoint{border-top:1px solid var(--dsw-alias-border-l1);padding:0;display:flex;flex-direction:column}
+.rt-cpLine{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:16px;overflow-wrap:anywhere;padding:8px 12px 0}
+.rt-cpSince{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;overflow-wrap:anywhere;padding:2px 12px 0}
+.rt-cpToggle{color:var(--dsw-alias-state-business-primary);cursor:pointer;background:0 0;border:none;font-size:12px;line-height:16px;padding:4px 12px;justify-content:flex-start;width:100%;text-align:left}
 .rt-cpToggle:hover{text-decoration:underline}
-.rt-frozen{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-markdown-code-block);padding:6px 10px;display:flex;flex-direction:column;gap:2px}
-.rt-frozenRow{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:17px;display:flex;justify-content:space-between;gap:10px}
+.rt-cpToggle:hover{text-decoration:underline}
+.rt-frozen{background:var(--dsw-alias-markdown-code-block);padding:2px 0 6px;display:flex;flex-direction:column}
+.rt-frozenRow{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:17px;display:flex;justify-content:space-between;gap:10px;padding:4px 12px}
+.rt-frozenRow + .rt-frozenRow{border-top:1px solid var(--dsw-alias-border-l1)}
 .rt-status{min-height:16px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;padding:0 12px}
 .rt-statusOk{color:var(--dsw-alias-state-success-primary)}
 .rt-statusError{color:var(--dsw-alias-state-error-primary)}`;
