@@ -84,3 +84,5 @@ No refresh, no polling: `tracking_write` appends a session event → the project
 ## License
 
 [MIT](LICENSE)
+
+<!-- demo checkpoint marker -->
