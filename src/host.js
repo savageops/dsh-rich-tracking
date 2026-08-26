@@ -37,12 +37,12 @@ Write contract: send the ENTIRE board every call — it REPLACES the previous on
 Checkpoints: when the operator says "take a checkpoint" / "checkpoint", call tracking_checkpoint — the HOST captures git branch/HEAD/dirty state plus the frozen board; never type git facts yourself.
 The board re-derives, it never narrates: after the operator presses ALIGN, recompute every percent from the named artifacts before writing again.`
 
-/** Message factory (dsh-llm shape, inlined zero-dep per design D8). */
-function createPluginMessage(content, form, summary) {
+/** Message factory (dsh-llm shape, inlined zero-dep per design D8). Content is a block array — a plain string renders as per-character unknown blocks. */
+function createPluginMessage(text, form, summary) {
   return Object.freeze({
     id: randomUUID(),
     role: 'user',
-    content,
+    content: [{ type: 'text', text }],
     source: { kind: 'plugin', plugin: 'dsh-rich-tracking', form, summary },
   })
 }
