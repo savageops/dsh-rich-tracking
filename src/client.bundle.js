@@ -51,6 +51,8 @@ window.__ModuleLoader__.load({
 		"row.collapse": "hide row items",
 			"action.pursue": "Pursue",
 			"action.pursue.hint": "Make this row the agent's next focus — lands as an instruction in its next step.",
+		"action.delegate": "Delegate",
+		"action.delegate.hint": "Hand this row to a background subagent with read/write access — the delegation instruction carries the row's details and progress; the subagent tracks its own board scoped to this task.",
 			"action.align": "Align",
 			"action.align.hint": "Force a re-derivation of every percent from the named artifacts — the lie-detector pass.",
 			"action.alignRow.hint": "Re-derive this row's percent from its evidence artifacts.",
@@ -89,6 +91,8 @@ window.__ModuleLoader__.load({
 		"row.collapse": "收起行内条目",
 			"action.pursue": "推进",
 			"action.pursue.hint": "让这一行成为 agent 的下一个工作重点——作为指令送达它的下一步。",
+		"action.delegate": "委派",
+		"action.delegate.hint": "把这一行交给拥有读写权限的后台子代理——委派指令携带该行的详情与进度；子代理在自己的会话里维护只属于此任务的看板。",
 			"action.align": "对齐",
 			"action.align.hint": "强制从证据工件重新推导所有百分比——测谎通道。",
 			"action.alignRow.hint": "从该行的证据工件重新推导其百分比。",
@@ -227,6 +231,8 @@ window.__ModuleLoader__.load({
 			if (status === "blocked") return (0, react_jsx_runtime.jsx)("span", { className: "rt-glyph rt-glyphBlocked", children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconWarningOutline16, { size: 14 }) });
 			return (0, react_jsx_runtime.jsx)("span", { className: "rt-glyph rt-glyphPending", children: (0, react_jsx_runtime.jsx)(PendingGlyph, {}) });
 		}
+		/** Delegate icon: the person/agent glyph when the runtime primitives carry it, queue glyph as fallback. */
+		const DelegateIcon = _deepseek_ai_dsh_client_ui_primitives.IconUserOutline16 ?? _deepseek_ai_dsh_client_ui_primitives.IconQueueOutline14;
 		/** Tooltip-wrapped icon action (exemplar PreflightButton pattern: 500ms tooltip naming verb + consequence). */
 		function ActionButton({ label, hint, disabled, onClick, children }) {
 			return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
@@ -315,6 +321,13 @@ window.__ModuleLoader__.load({
 								disabled: busy,
 								onClick: () => onAction("pursue", row.id),
 								children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSendOutline14, {})
+							}),
+							(0, react_jsx_runtime.jsx)(ActionButton, {
+								label: t("action.delegate"),
+								hint: t("action.delegate.hint"),
+								disabled: busy,
+								onClick: () => onAction("delegate", row.id),
+								children: (0, react_jsx_runtime.jsx)(DelegateIcon, { size: 14 })
 							}),
 							(0, react_jsx_runtime.jsx)(ActionButton, {
 								label: t("action.align"),

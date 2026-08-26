@@ -284,3 +284,24 @@ export function nextCheckpointId(events) {
   const match = /^cp-(\d+)$/.exec(last.data.id ?? '')
   return match === null ? 'cp-1' : `cp-${Number(match[1]) + 1}`
 }
+
+/**
+ * The /track injection body (pure): the full ledger plus the living-ledger
+ * doctrine, as the paragraph the agent must act on. A null view (no board
+ * yet) yields the creation directive instead.
+ */
+export function ledgerContext(view) {
+  if (view === null || view.present !== true) {
+    return 'No tracking board exists yet in this session. If the work ahead spans multiple steps, waves, or sessions, create one now with tracking_write: rows mapped to the plan\'s real workstreams, every percent >= 1 carrying evidence naming its artifact basis (paths + checked/total), and rows optionally carrying an items checklist that must add up to the percent.'
+  }
+  const rows = view.rows.map((row) => {
+    const items = Array.isArray(row.items) && row.items.length > 0
+      ? ` — items: ${row.items.map((item) => `${item.done === true ? '[x]' : '[ ]'} ${item.label}`).join('; ')}`
+      : ''
+    const basis = row.evidence !== undefined ? ` — basis: ${row.evidence}` : ''
+    const note = row.note !== undefined ? ` — note: ${row.note}` : ''
+    const status = row.status ?? deriveStatus(row.percent)
+    return `- ${row.label} (${row.id}): ${row.percent}% ${status}${items}${basis}${note}`
+  }).join('\n')
+  return `TRACKING LEDGER (revision r${view.revision}, overall ${view.overallPercent}%, ${view.doneCount}/${view.rows.length} rows done):\n${rows}\n\nRe-derive this ledger now: read the artifacts each row names (documentation, code, receipts, user context), recompute percent as checked/total — never from impression — fix any stale items or prose (labels, notes, evidence must describe current reality), then call tracking_write with the corrected board. Afterward keep the ledger living: update percents and item flags after every completed step, and refresh the prose whenever the underlying details change.`
+}

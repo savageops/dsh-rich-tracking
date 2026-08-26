@@ -4,7 +4,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { boardView, foldTracking, nextCheckpointId, nextRevision, overallPercentOf, validateBoard } from './tracking-engine.js'
+import { boardView, foldTracking, ledgerContext, nextCheckpointId, nextRevision, overallPercentOf, validateBoard } from './tracking-engine.js'
 
 const validRow = (over = {}) => ({ id: 'w2-fleet', label: 'W2 fleet rebuild', percent: 55, evidence: '.docs/GOAL.md W2 + qc: 6/11', ...over })
 
@@ -152,4 +152,33 @@ test('view: rows carry items through to the wire', () => {
   assert.equal(Array.isArray(view.rows[0].items), true)
   assert.equal(view.rows[0].items.filter((item) => item.done).length, 2)
   assert.equal(view.overallPercent, 40, '2/5 items = 40')
+})
+
+test('ledgerContext: null view yields the creation directive', () => {
+  const text = ledgerContext(null)
+  assert.match(text, /No tracking board exists yet/)
+  assert.match(text, /create one now with tracking_write/)
+})
+
+test('ledgerContext: full view renders rows, item flags, evidence, and the re-derivation doctrine', () => {
+  let state = null
+  state = foldTracking(state, {
+    type: 'tracking/write',
+    data: {
+      revision: 4,
+      rows: [
+        validRow({ percent: 60, evidence: 'demo receipts: 3/5', note: 'two receipts pending', items: [{ label: 'a', done: true }, { label: 'b', done: true }, { label: 'c', done: true }, { label: 'd', done: false }, { label: 'e', done: false }] }),
+        validRow({ id: 'w9', label: 'W9 done', percent: 100, evidence: 'qc: 5/5' }),
+      ],
+      note: null, git: null, commitsAhead: null, at: 1,
+    },
+  })
+  const text = ledgerContext(boardView(state))
+  assert.match(text, /revision r4, overall 67%/)
+  assert.match(text, /\[x\] a; \[x\] b; \[x\] c; \[ \] d/)
+  assert.match(text, /— basis: demo receipts: 3\/5/)
+  assert.match(text, /— note: two receipts pending/)
+  assert.match(text, /W9 done \(w9\): 100% done/)
+  assert.match(text, /Re-derive this ledger now/)
+  assert.match(text, /update percents and item flags after every completed step/)
 })

@@ -14,7 +14,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
-import { boardView, foldTracking, lastTrackingEvent, nextCheckpointId, nextRevision, overallPercentOf, validateBoard } from './tracking-engine.js'
+import { boardView, foldTracking, lastTrackingEvent, ledgerContext, nextCheckpointId, nextRevision, overallPercentOf, validateBoard } from './tracking-engine.js'
 
 const API_PREFIX = '/api/rich-tracking'
 /** Refresh cadence (design §10.2, operator-decided v1): 8 assistant steps OR 6k output tokens since the last write. */
@@ -35,6 +35,9 @@ const ANNOUNCEMENT = `dsh-rich-tracking plugin installed (progress scoreboard): 
 When to create a board: the operator asks for a scoreboard, waves, or progress tracking, or a mission visibly spans many turns (e.g. a multi-wave build plan). Map rows to the plan's real workstreams (3-7 rows ideal, 12 max; e.g. one row per wave).
 Write contract: send the ENTIRE board every call — it REPLACES the previous one. percent is an integer 0-100 derived from artifact truth: (acceptance items that hold right now) / (total acceptance items) in the row's owning artifacts — plan checkboxes, landed receipts, verified readbacks. 100 only when every item is checked AND the owning receipt exists. Every row with percent >= 1 MUST carry evidence naming that basis (paths + checked/total, e.g. '.docs/GOAL.md W2 snapshot + .docs/qc/: 9/14 receipts'). A percent without evidence is a fabrication; validation rejects it and the operator reads the board as a lie detector. Rows may carry items — a 1-20 entry acceptance checklist [{label, done}] the operator expands by clicking the row; when items are present, percent must equal round(done/total x 100) (validation rejects a mismatch) and the checklist becomes the row's visible inner progress. Overall completion is item-weighted (each item one unit; itemless rows contribute their percent as one unit). Keep a row's percent unchanged when its truth did not change. Update the board after material progress, a verified blocker, or when the operator acts on a row (pursue/align land as instructions naming the row).
 Checkpoints: when the operator says "take a checkpoint" / "checkpoint", call tracking_checkpoint — the HOST captures git branch/HEAD/dirty state plus the frozen board; never type git facts yourself.
+Update cadence — living ledger: call tracking_write after EVERY completed task, step, or todo whose artifact truth changed (refreshed percents and item flags), and update the row prose (label, note, evidence, items) whenever the underlying details shift. The board always describes current reality, not a milestone snapshot.
+/track: the operator's chat command forces a ledger sync — it injects the full ledger plus this doctrine into your next step; re-derive from artifacts, correct the board, then continue with the work. While a board is live, every user submit also carries a compact board reminder; do not recite it to the user.
+Delegation: when the operator presses DELEGATE on a row (or asks to delegate), hand that row to a background subagent with read/write access — self-contained brief (row details, items, evidence, progress), scoped strictly to that row's task and subtasks, and the subagent tracks its own progress with tracking_write in its own session. Fold its receipts back into the row when its report lands.
 The board re-derives, it never narrates: after the operator presses ALIGN, recompute every percent from the named artifacts before writing again.`
 
 /** Message factory (dsh-llm shape, inlined zero-dep per design D8). Content is a block array — a plain string renders as per-character unknown blocks. */
@@ -291,6 +294,15 @@ function instructionFor(kind, view, rowId) {
     if (row === undefined) return null
     return `[rich-tracking | pursue] The operator pressed PURSUE on tracking row "${row.label}" (${row.percent}%, ${row.status}). Make this row the focus of your next work: if it never started, start it now; if it stalled or the session was interrupted, resume it. Read the row's evidence artifacts for the remaining acceptance items, set your todo_write list to those concrete steps, and call tracking_write with refreshed percents after material progress or a verified blocker.`
   }
+  if (kind === 'delegate') {
+    const row = view?.rows.find((entry) => entry.id === rowId) ?? view?.rows[0]
+    if (row === undefined) return null
+    const items = Array.isArray(row.items) && row.items.length > 0
+      ? ` Its item checklist: ${row.items.map((item) => `${item.done === true ? '[x]' : '[ ]'} ${item.label}`).join('; ')}.`
+      : ''
+    const basis = row.evidence !== undefined ? ` Its evidence basis: ${row.evidence}.` : ''
+    return `[rich-tracking | delegate] The operator pressed DELEGATE on tracking row "${row.label}" (${row.id}, ${row.percent}%, ${row.status}). Delegate this row to a background subagent now: use your subagent tool (run_in_background unless you need the result immediately) with read/write access to the workspace. Give the subagent a self-contained brief — the row's label, current percent and status,${items}${basis} plus the user context and file paths it needs — scoped strictly to this row's task and its subtasks. Require the subagent to track its own progress with tracking_write in its own session (a board scoped to this task and its subtasks only, percents updated after each step) and to return receipts (commits, test results, file paths) you can verify. When its report lands, fold the receipts into THIS row: update percent, item flags, and evidence to what actually holds, then call tracking_write with the corrected board.`
+  }
   if (kind === 'align') {
     const scoped = rowId !== undefined && rowId !== null ? ` on row "${view?.rows.find((entry) => entry.id === rowId)?.label ?? rowId}"` : ''
     return `[rich-tracking | align] The operator pressed ALIGN${scoped}. Re-derive the board from artifact truth: read each row's evidence artifacts (plan snapshots, receipts, acceptance boxes), recompute percent as checked/total — never from impression — then call tracking_write with the corrected rows and re-align your todo_write list to the remaining work. Drop rows whose owning artifacts prove them obsolete; add rows the plan owns but the board misses.`
@@ -342,7 +354,7 @@ function guard(req, res) {
 
 /** The refresh loop (design §10): log-derived counters + one reminder per turn. */
 function installRefreshReminder(ctx) {
-  /** Per-session runtime: folded projection STATE (not the view — folds chain), staleness counters, turn cap. */
+  /** Per-session runtime: folded projection STATE (not the view — folds chain), staleness counters, turn caps. */
   const runtime = new WeakMap()
 
   const runtimeOf = (session) => {
@@ -352,7 +364,7 @@ function installRefreshReminder(ctx) {
       // fire session/event, so incremental-only would miss pre-existing boards.
       let state = null
       for (const event of session.events) state = foldTracking(state, event)
-      entry = { state, steps: 0, outputTokens: 0, remindedThisTurn: false }
+      entry = { state, steps: 0, outputTokens: 0, remindedThisTurn: false, injectedThisTurn: false }
       runtime.set(session, entry)
     }
     return entry
@@ -371,6 +383,7 @@ function installRefreshReminder(ctx) {
     }
     if (event.type === 'turn/start') {
       entry.remindedThisTurn = false
+      entry.injectedThisTurn = false
       return
     }
     if (event.type === 'assistant/message') {
@@ -388,17 +401,45 @@ function installRefreshReminder(ctx) {
       const view = boardView(entry.state)
       if (view === null || view.present !== true) return decision // no board, or dismissed
       if (view.allDone === true) return decision // nothing to refresh
-      if (entry.remindedThisTurn === true) return decision // one per turn
-      if (entry.steps < REMINDER_STEPS && entry.outputTokens < REMINDER_OUTPUT_TOKENS) return decision
-      entry.remindedThisTurn = true
-      const rows = view.rows.map((row) => `${row.label} ${row.percent}%`).join('; ')
-      const message = createPluginMessage(
-        `<tracking-refresh> The tracking board (revision r${view.revision}) is stale: ${entry.steps} assistant steps and ~${entry.outputTokens} output tokens since the last tracking_write. Current rows: ${rows}. Re-derive percents from artifact truth (the row evidence fields name the owners: plan snapshots, receipts, acceptance boxes) and call tracking_write with the corrected board. Keep a row's percent unchanged when its truth did not change. Do not mention this reminder to the user.`,
-        'notice',
-        'tracking refresh',
-      )
-      return { ...decision, messages: [...decision.messages, message] }
+
+      // Staleness backstop (design §10): one reminder per turn.
+      if (entry.remindedThisTurn === false && (entry.steps >= REMINDER_STEPS || entry.outputTokens >= REMINDER_OUTPUT_TOKENS)) {
+        entry.remindedThisTurn = true
+        const rows = view.rows.map((row) => `${row.label} ${row.percent}%`).join('; ')
+        const message = createPluginMessage(
+          `<tracking-refresh> The tracking board (revision r${view.revision}) is stale: ${entry.steps} assistant steps and ~${entry.outputTokens} output tokens since the last tracking_write. Current rows: ${rows}. Re-derive percents from artifact truth (the row evidence fields name the owners: plan snapshots, receipts, acceptance boxes) and call tracking_write with the corrected board. Keep a row's percent unchanged when its truth did not change. Do not mention this reminder to the user.`,
+          'notice',
+          'tracking refresh',
+        )
+        return { ...decision, messages: [...decision.messages, message] }
+      }
+
+      // Default submit-time injection (operator decision v0.3): while a live
+      // board exists, the FIRST step of every turn carries a compact board
+      // reminder — unless the assembly already carries richer tracking context
+      // (a /track sync, a whip instruction, or the staleness reminder above).
+      if (entry.injectedThisTurn === false && assemblyCarriesTracking(decision.messages) === false) {
+        entry.injectedThisTurn = true
+        const rows = view.rows.map((row) => `${row.label} ${row.percent}%`).join('; ')
+        const message = createPluginMessage(
+          `<tracking-board> Board r${view.revision} · ${view.overallPercent}% overall · ${rows}. Living-ledger duty: after each completed step, tracking_write the refreshed percents/items; refresh row prose when details change. Do not recite this to the user.`,
+          'notice',
+          'tracking board',
+        )
+        return { ...decision, messages: [...decision.messages, message] }
+      }
+      return decision
     })()
+  })
+}
+
+/** Whether the trailing assembly messages already carry tracking context (dedupe). */
+function assemblyCarriesTracking(messages) {
+  if (Array.isArray(messages) === false) return false
+  return messages.slice(-3).some((message) => {
+    const block = Array.isArray(message?.content) ? message.content.find((part) => part.type === 'text') : null
+    const text = block?.text ?? ''
+    return text.startsWith('<tracking') || text.startsWith('[rich-tracking')
   })
 }
 
@@ -421,6 +462,35 @@ export function apply(ctx) {
   ctx.tools.register(trackingCheckpointTool())
   installRefreshReminder(ctx)
 
+  // /track (operator decision v0.3): the chat command that forces a ledger
+  // sync. Same grammar family as /plan — bare invocation or trailing message;
+  // the trailing message rides along as the user's own words, with the full
+  // ledger plus doctrine injected into the next step (the /plan leadingInput
+  // pattern: steer when running, followup when idle).
+  ctx.inject(['commands'], (commandCtx) => {
+    commandCtx.commands.register({
+      name: 'track',
+      description: 'Tracking ledger sync: injects the current board plus the tracking doctrine into the agent\'s next step',
+      input: { hint: '[message]' },
+      handler: ({ agent, rawInput }) => {
+        let state = null
+        for (const event of agent.session.events) state = foldTracking(state, event)
+        const view = boardView(state)
+        const message = rawInput.trim()
+        const text = `${message !== '' ? `${message}\n\n` : ''}<tracking-sync>\n${ledgerContext(view)}`
+        const userMessage = { id: randomUUID(), role: 'user', content: [{ type: 'text', text }], source: { kind: 'user' } }
+        if (agent.status === 'running') agent.steer(userMessage)
+        else agent.followup(userMessage)
+        return {
+          kind: 'success',
+          text: view === null || view.present !== true
+            ? 'No board yet — tracking doctrine injected; the agent will create a board if the work spans steps.'
+            : `Ledger r${view.revision} injected (${view.overallPercent}% overall) — the agent will re-derive and update it.`,
+        }
+      },
+    })
+  })
+
   ctx.effect(() => {
     const dispose = ctx.webServer.register({
       kind: 'exact',
@@ -438,7 +508,7 @@ export function apply(ctx) {
           writeJson(res, 400, { ok: false, error: 'invalid-action' })
           return
         }
-        const kinds = new Set(['pursue', 'align', 'dismiss', 'dismiss-row', 'checkpoint-request'])
+        const kinds = new Set(['pursue', 'delegate', 'align', 'dismiss', 'dismiss-row', 'checkpoint-request'])
         if (kinds.has(body.kind) === false) { writeJson(res, 400, { ok: false, error: 'unknown-action' }); return }
 
         const agent = ctx.agents.get(body.sessionId)
@@ -454,7 +524,7 @@ export function apply(ctx) {
 
         agent.session.append('tracking/decision', { kind: body.kind, rowId: body.rowId ?? null, instruction, at: Date.now() })
 
-        const whip = body.kind === 'pursue' || body.kind === 'align' || body.kind === 'checkpoint-request'
+        const whip = body.kind === 'pursue' || body.kind === 'delegate' || body.kind === 'align' || body.kind === 'checkpoint-request'
         if (whip === true) {
           const message = createPluginMessage(instruction, 'steer', `${body.kind}${body.rowId !== undefined && body.rowId !== null ? ` ${body.rowId}` : ''}`)
           if (agent.status === 'running') agent.steer(message)
