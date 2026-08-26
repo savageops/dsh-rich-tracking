@@ -377,7 +377,7 @@ function installRefreshReminder(ctx) {
       entry.remindedThisTurn = true
       const rows = view.rows.map((row) => `${row.label} ${row.percent}%`).join('; ')
       const message = createPluginMessage(
-        `<tracking-refresh> The tracking board is stale: ${entry.steps} assistant steps and ~${entry.outputTokens} output tokens since the last tracking_write. Current rows: ${rows}. Re-derive percents from artifact truth (the row evidence fields name the owners: plan snapshots, receipts, acceptance boxes) and call tracking_write with the corrected board. Keep a row's percent unchanged when its truth did not change. Do not mention this reminder to the user.`,
+        `<tracking-refresh> The tracking board (revision r${view.revision}) is stale: ${entry.steps} assistant steps and ~${entry.outputTokens} output tokens since the last tracking_write. Current rows: ${rows}. Re-derive percents from artifact truth (the row evidence fields name the owners: plan snapshots, receipts, acceptance boxes) and call tracking_write with the corrected board. Keep a row's percent unchanged when its truth did not change. Do not mention this reminder to the user.`,
         'notice',
         'tracking refresh',
       )
