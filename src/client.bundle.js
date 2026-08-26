@@ -46,6 +46,9 @@ window.__ModuleLoader__.load({
 			"board.done": "done",
 			"rows": "rows",
 			"row.basis": "basis:",
+		"row.items": "items",
+		"row.expand": "show row items",
+		"row.collapse": "hide row items",
 			"action.pursue": "Pursue",
 			"action.pursue.hint": "Make this row the agent's next focus — lands as an instruction in its next step.",
 			"action.align": "Align",
@@ -81,6 +84,9 @@ window.__ModuleLoader__.load({
 			"board.done": "完成",
 			"rows": "行",
 			"row.basis": "依据：",
+		"row.items": "项",
+		"row.expand": "展开行内条目",
+		"row.collapse": "收起行内条目",
 			"action.pursue": "推进",
 			"action.pursue.hint": "让这一行成为 agent 的下一个工作重点——作为指令送达它的下一步。",
 			"action.align": "对齐",
@@ -130,9 +136,20 @@ window.__ModuleLoader__.load({
 .rt-iconBtn:disabled{opacity:.45;cursor:default}
 .rt-chevron{color:var(--dsw-alias-label-tertiary);flex:none;place-items:center;display:grid}
 .rt-list{flex-direction:column;gap:8px;max-height:180px;margin:0;padding:0;list-style:none;display:flex;overflow-y:auto}
+.rt-row:hover,.rt-row:focus-within,.rt-rowOpen{background:var(--dsw-alias-interactive-bg-hover)}
 .rt-row{border-radius:8px;align-items:flex-start;gap:10px;width:100%;padding:2px 6px 2px 2px;display:flex}
-.rt-row:hover,.rt-row:focus-within{background:var(--dsw-alias-interactive-bg-hover)}
 .rt-rowDim{opacity:.55}
+.rt-rowHasItems{cursor:pointer}
+.rt-rowHasItems:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px}
+.rt-rowChevron{color:var(--dsw-alias-label-tertiary);flex:none;align-self:center;place-items:center;display:grid}
+.rt-itemCount{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px;font-variant-numeric:tabular-nums;flex:none}
+.rt-itemList{border-left:2px solid var(--dsw-alias-border-l1);margin:3px 0 1px 1px;padding-left:8px;flex-direction:column;gap:1px;display:flex}
+.rt-item{align-items:flex-start;gap:7px;min-width:0;display:flex}
+.rt-itemGlyph{color:inherit;flex:none;place-items:center;width:14px;height:14px;margin-top:1px;display:grid}
+.rt-itemDone{color:var(--dsw-alias-label-caption)}
+.rt-itemOpen{color:var(--dsw-alias-state-business-primary)}
+.rt-itemLabel{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:17px;min-width:0;overflow-wrap:anywhere}
+.rt-itemDone .rt-itemLabel{color:var(--dsw-alias-label-caption);text-decoration:line-through;text-decoration-thickness:1px}
 .rt-glyph{flex:none;place-items:center;width:16px;height:16px;margin-top:2px;display:grid}
 .rt-glyphDone{color:var(--dsw-alias-state-success-primary)}
 .rt-glyphActive{color:var(--dsw-alias-state-business-primary)}
@@ -226,11 +243,28 @@ window.__ModuleLoader__.load({
 				})
 			});
 		}
-		/** One board row: glyph, label, mini progressbar, percent, hover-revealed pursue/align/dismiss. */
+		/** One board row: glyph, label, mini progressbar, percent, hover-revealed pursue/align/dismiss. Rows carrying `items` expand on click/Enter to show the acceptance checklist — done items grey + strikethrough, open items primary. */
 		function BoardRow({ row, busy, onAction, t }) {
+			const [open, setOpen] = (0, react.useState)(false);
+			const items = Array.isArray(row.items) ? row.items : [];
+			const hasItems = items.length > 0;
+			const doneCount = items.filter((item) => item.done === true).length;
+			const toggle = () => setOpen((value) => !value);
+			const expandProps = hasItems === true ? {
+				role: "button",
+				tabIndex: 0,
+				"aria-expanded": open,
+				"aria-label": `${row.label} — ${open === true ? t("row.collapse") : t("row.expand")}`,
+				onClick: toggle,
+				onKeyDown: (event) => {
+					if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); toggle(); }
+					else if (event.key === "Escape" && open === true) { event.stopPropagation(); setOpen(false); }
+				}
+			} : {};
 			return (0, react_jsx_runtime.jsxs)("li", {
-				className: cx("rt-row", row.dimmed && "rt-rowDim"),
+				className: cx("rt-row", row.dimmed && "rt-rowDim", hasItems && "rt-rowHasItems", open && "rt-rowOpen"),
 				"data-status": row.status,
+				...expandProps,
 				children: [
 					(0, react_jsx_runtime.jsx)(RowGlyph, { status: row.status }),
 					(0, react_jsx_runtime.jsxs)("span", {
@@ -249,13 +283,29 @@ window.__ModuleLoader__.load({
 										"aria-label": row.label,
 										children: (0, react_jsx_runtime.jsx)("span", { className: "rt-barFill", style: { width: `${row.percent}%` } })
 									}),
-									(0, react_jsx_runtime.jsx)("span", { className: "rt-rowPercent", children: `${row.percent}%` })
+									(0, react_jsx_runtime.jsx)("span", { className: "rt-rowPercent", children: `${row.percent}%` }),
+									hasItems === true ? (0, react_jsx_runtime.jsx)("span", { className: "rt-itemCount", children: `${doneCount}/${items.length} ${t("row.items")}` }) : null
 								]
 							}),
 							row.note !== undefined ? (0, react_jsx_runtime.jsx)("span", { className: "rt-rowNote", children: row.note }) : null,
-							row.evidence !== undefined ? (0, react_jsx_runtime.jsx)("span", { className: "rt-rowEvidence", children: `${t("row.basis")} ${row.evidence}` }) : null
+							row.evidence !== undefined ? (0, react_jsx_runtime.jsx)("span", { className: "rt-rowEvidence", children: `${t("row.basis")} ${row.evidence}` }) : null,
+							open === true && hasItems === true ? (0, react_jsx_runtime.jsx)("span", {
+								className: "rt-itemList",
+								children: items.map((item, index) => (0, react_jsx_runtime.jsxs)("span", {
+									className: cx("rt-item", item.done === true ? "rt-itemDone" : "rt-itemOpen"),
+									children: [
+										(0, react_jsx_runtime.jsx)("span", { className: "rt-itemGlyph", children: item.done === true ? (0, react_jsx_runtime.jsx)(CompletedGlyph, {}) : (0, react_jsx_runtime.jsx)(PendingGlyph, {}) }),
+										(0, react_jsx_runtime.jsx)("span", { className: "rt-itemLabel", children: item.label })
+									]
+								}, index))
+							}) : null
 						]
 					}),
+					hasItems === true ? (0, react_jsx_runtime.jsx)("span", {
+						className: "rt-rowChevron",
+						"aria-hidden": "true",
+						children: open === true ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, {}) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronUpOutline14, {})
+					}) : null,
 					(0, react_jsx_runtime.jsxs)("span", {
 						className: "rt-rowActions",
 						children: [

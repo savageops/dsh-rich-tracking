@@ -25,6 +25,8 @@ export const LIMITS = {
   maxLabel: 80,
   maxNote: 200,
   maxEvidence: 300,
+  maxItems: 20,
+  maxItemLabel: 120,
   maxBoardNote: 200,
   maxCheckpointLabel: 60,
 }
@@ -86,6 +88,31 @@ export function validateBoard(raw) {
     if (typeof row.percent === 'number' && row.percent >= 1 && (typeof row.evidence !== 'string' || row.evidence.trim() === '')) {
       fail(`${where}.evidence is required when percent >= 1 — name the artifact basis (paths + checked/total, e.g. '.docs/GOAL.md W2 snapshot + .docs/qc/: 9/14 receipts')`)
     }
+    // Items checklist (row expansion): when present, percent must equal the
+    // item math — the board shows exactly what the items show, never a number
+    // its own checklist contradicts.
+    if (row.items !== undefined) {
+      if (Array.isArray(row.items) === false || row.items.length === 0) {
+        fail(`${where}.items must be a non-empty array (1-${LIMITS.maxItems}) of { label, done } when provided`)
+      } else if (row.items.length > LIMITS.maxItems) {
+        fail(`${where}.items has ${row.items.length} entries (limit ${LIMITS.maxItems} — split the row or prune)`)
+      } else {
+        row.items.forEach((item, itemIndex) => {
+          const at = `${where}.items[${itemIndex}]`
+          if (typeof item !== 'object' || item === null) { fail(`${at} must be an object { label, done }`); return }
+          if (typeof item.label !== 'string' || item.label.trim() === '') fail(`${at}.label must be a non-empty string`)
+          else if (item.label.length > LIMITS.maxItemLabel) fail(`${at}.label exceeds ${LIMITS.maxItemLabel} characters`)
+          if (typeof item.done !== 'boolean') fail(`${at}.done must be a boolean`)
+        })
+        if (typeof row.percent === 'number' && row.items.every((item) => typeof item?.done === 'boolean')) {
+          const doneCount = row.items.filter((item) => item.done === true).length
+          const derived = Math.round((doneCount / row.items.length) * 100)
+          if (row.percent !== derived) {
+            fail(`${where}.percent is ${row.percent} but its items say ${doneCount}/${row.items.length} = ${derived} — when items are present, percent must equal round(done/total × 100); fix the percent or the item flags`)
+          }
+        }
+      }
+    }
     // Status consistency (design §6.1 rule 3).
     if (typeof row.percent === 'number' && Number.isInteger(row.percent)) {
       const effective = deriveStatus(row.percent, row.status)
@@ -109,15 +136,34 @@ export function validateBoard(raw) {
     status: deriveStatus(row.percent, row.status),
     ...(row.note !== undefined && row.note !== '' ? { note: row.note } : {}),
     ...(row.evidence !== undefined && row.evidence !== '' ? { evidence: row.evidence } : {}),
+    ...(Array.isArray(row.items) && row.items.length > 0
+      ? { items: row.items.map((item) => ({ label: item.label, done: item.done === true })) }
+      : {}),
   }))
   return { ok: true, board: { rows: clean, note: typeof raw.note === 'string' && raw.note !== '' ? raw.note : null } }
 }
 
-/** Overall percent = mean of row percents, rounded to integer. */
+/**
+ * Overall completion = item-weighted unit fraction. Every acceptance item is
+ * one unit; a row without items contributes one unit at percent/100. With no
+ * items anywhere this is exactly the rounded mean of row percents (legacy
+ * boards keep their math); with items it stops a 10-item row and a 2-item row
+ * counting equally toward "completion".
+ */
 export function overallPercentOf(rows) {
   if (rows.length === 0) return 0
-  const total = rows.reduce((sum, row) => sum + row.percent, 0)
-  return Math.round(total / rows.length)
+  let units = 0
+  let doneUnits = 0
+  for (const row of rows) {
+    if (Array.isArray(row.items) && row.items.length > 0) {
+      units += row.items.length
+      doneUnits += row.items.filter((item) => item.done === true).length
+    } else {
+      units += 1
+      doneUnits += row.percent / 100
+    }
+  }
+  return Math.round((doneUnits / units) * 100)
 }
 
 /**

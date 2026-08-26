@@ -93,3 +93,63 @@ test('overall percent is the rounded mean', () => {
   assert.equal(overallPercentOf([{ percent: 55 }, { percent: 0 }]), 28)
   assert.equal(overallPercentOf([]), 0)
 })
+
+test('items: valid checklist passes through and drives percent cross-check', () => {
+  const items = [
+    { label: 'r1 board write', done: true },
+    { label: 'marker commit', done: true },
+    { label: 'r2 board write', done: true },
+    { label: 'checkpoint', done: false },
+    { label: 'receipt reply', done: false },
+  ]
+  const ok = validateBoard({ rows: [validRow({ percent: 60, evidence: 'demo receipts: 3/5', items })] })
+  assert.equal(ok.ok, true)
+  assert.equal(ok.board.rows[0].items.length, 5)
+  assert.deepEqual(ok.board.rows[0].items[0], { label: 'r1 board write', done: true })
+
+  const mismatch = validateBoard({ rows: [validRow({ percent: 80, evidence: 'demo receipts: 3/5', items })] })
+  assert.equal(mismatch.ok, false)
+  assert.match(mismatch.errors[0], /items say 3\/5 = 60/)
+
+  const allDone = validateBoard({ rows: [validRow({ percent: 100, evidence: 'demo receipts: 5/5', items: items.map((item) => ({ ...item, done: true })) })] })
+  assert.equal(allDone.ok, true)
+  assert.equal(allDone.board.rows[0].status, 'done')
+})
+
+test('items: shape rules — non-empty array, boolean done, label cap, count cap', () => {
+  assert.equal(validateBoard({ rows: [validRow({ items: [] })] }).ok, false)
+  assert.equal(validateBoard({ rows: [validRow({ percent: 50, evidence: 'x', items: [{ label: 'a', done: true }, { label: 'b' }] })] }).ok, false)
+  assert.equal(validateBoard({ rows: [validRow({ percent: 100, evidence: 'x', items: [{ label: 'x'.repeat(121), done: true }] })] }).ok, false)
+  assert.equal(validateBoard({
+    rows: [validRow({
+      percent: 100, evidence: 'x',
+      items: Array.from({ length: 21 }, () => ({ label: 'i', done: true })),
+    })],
+  }).ok, false)
+})
+
+test('overall percent is item-weighted when rows carry items', () => {
+  const withItems = (done, total) => ({
+    percent: Math.round((done / total) * 100),
+    items: Array.from({ length: total }, (_, index) => ({ label: `i${index}`, done: index < done })),
+  })
+  assert.equal(overallPercentOf([withItems(9, 10), withItems(0, 2)]), 75, '9/12 items')
+  assert.equal(overallPercentOf([withItems(3, 4), { percent: 50 }]), 70, '(3 + 0.5) / 5 units')
+  assert.equal(overallPercentOf([{ percent: 55 }, { percent: 0 }]), 28, 'legacy mean unchanged without items')
+})
+
+test('view: rows carry items through to the wire', () => {
+  let state = null
+  state = foldTracking(state, {
+    type: 'tracking/write',
+    data: {
+      revision: 1,
+      rows: [validRow({ percent: 60, evidence: 'demo receipts: 3/5', items: [{ label: 'a', done: true }, { label: 'b', done: true }, { label: 'c', done: false }, { label: 'd', done: false }, { label: 'e', done: false }] })],
+      note: null, git: null, commitsAhead: null, at: 1,
+    },
+  })
+  const view = boardView(state)
+  assert.equal(Array.isArray(view.rows[0].items), true)
+  assert.equal(view.rows[0].items.filter((item) => item.done).length, 2)
+  assert.equal(view.overallPercent, 40, '2/5 items = 40')
+})

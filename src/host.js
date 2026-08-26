@@ -33,7 +33,7 @@ export const inject = ['tools', 'webServer', 'agents', 'systemPrompt']
  */
 const ANNOUNCEMENT = `dsh-rich-tracking plugin installed (progress scoreboard): the macro percent board the operator watches below the todo pill. todo_write stays the micro plan for the CURRENT turn (it resets every turn); tracking_write is the MISSION scoreboard — waves, milestones, multi-turn objectives — and survives across turns until every row is 100 or the operator dismisses the board.
 When to create a board: the operator asks for a scoreboard, waves, or progress tracking, or a mission visibly spans many turns (e.g. a multi-wave build plan). Map rows to the plan's real workstreams (3-7 rows ideal, 12 max; e.g. one row per wave).
-Write contract: send the ENTIRE board every call — it REPLACES the previous one. percent is an integer 0-100 derived from artifact truth: (acceptance items that hold right now) / (total acceptance items) in the row's owning artifacts — plan checkboxes, landed receipts, verified readbacks. 100 only when every item is checked AND the owning receipt exists. Every row with percent >= 1 MUST carry evidence naming that basis (paths + checked/total, e.g. '.docs/GOAL.md W2 snapshot + .docs/qc/: 9/14 receipts'). A percent without evidence is a fabrication; validation rejects it and the operator reads the board as a lie detector. Keep a row's percent unchanged when its truth did not change. Update the board after material progress, a verified blocker, or when the operator acts on a row (pursue/align land as instructions naming the row).
+Write contract: send the ENTIRE board every call — it REPLACES the previous one. percent is an integer 0-100 derived from artifact truth: (acceptance items that hold right now) / (total acceptance items) in the row's owning artifacts — plan checkboxes, landed receipts, verified readbacks. 100 only when every item is checked AND the owning receipt exists. Every row with percent >= 1 MUST carry evidence naming that basis (paths + checked/total, e.g. '.docs/GOAL.md W2 snapshot + .docs/qc/: 9/14 receipts'). A percent without evidence is a fabrication; validation rejects it and the operator reads the board as a lie detector. Rows may carry items — a 1-20 entry acceptance checklist [{label, done}] the operator expands by clicking the row; when items are present, percent must equal round(done/total x 100) (validation rejects a mismatch) and the checklist becomes the row's visible inner progress. Overall completion is item-weighted (each item one unit; itemless rows contribute their percent as one unit). Keep a row's percent unchanged when its truth did not change. Update the board after material progress, a verified blocker, or when the operator acts on a row (pursue/align land as instructions naming the row).
 Checkpoints: when the operator says "take a checkpoint" / "checkpoint", call tracking_checkpoint — the HOST captures git branch/HEAD/dirty state plus the frozen board; never type git facts yourself.
 The board re-derives, it never narrates: after the operator presses ALIGN, recompute every percent from the named artifacts before writing again.`
 
@@ -116,11 +116,26 @@ function trackingWriteTool() {
       status: { type: 'string', enum: ['pending', 'active', 'blocked', 'done'], description: "Optional. Derived when omitted: 100->done, >0->active, 0->pending. 'blocked' requires a note naming the concrete blocker." },
       note: { type: 'string', description: '<= 200 chars: what changed since the last write, or the blocker.' },
       evidence: { type: 'string', description: "<= 300 chars: the artifact basis — owning plan/receipt paths plus checked/total (e.g. '.docs/GOAL.md W2 snapshot + .docs/qc/: 9/14 receipts'). REQUIRED when percent >= 1." },
+      items: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 20,
+        description: 'Optional acceptance checklist (1-20 items) the operator expands by clicking the row: [{ label, done }]. When present, percent MUST equal round(done/total x 100) — validation rejects a mismatch. Items make the row\'s inner progress visible (done items grey out); evidence still names the artifact basis.',
+        items: {
+          type: 'object',
+          required: ['label', 'done'],
+          additionalProperties: false,
+          properties: {
+            label: { type: 'string', description: 'One acceptance item, <= 120 chars (e.g. "engine tests green").' },
+            done: { type: 'boolean', description: 'True when this item holds right now.' },
+          },
+        },
+      },
     },
   }
   return {
     name: 'tracking_write',
-    description: "Record and update the session's percent-progress scoreboard (the macro tracking board the operator watches above the chat input; todo_write stays the micro plan for the current turn). Send the ENTIRE board every call — it REPLACES the previous board. Rows: 1-12 (aim 3-7). percent is an integer 0-100 derived from artifact truth: the fraction of that row's acceptance items (plan checkboxes, landed receipts, verified boxes) that hold right now — never an impression. Every row with percent >= 1 MUST carry evidence naming that basis (paths + checked/total). percent 100 requires every acceptance item checked AND the owning receipt to exist. A row at 100 dims but stays visible until every row is 100. Calling this after a dismissal re-opens the board.",
+    description: "Record and update the session's percent-progress scoreboard (the macro tracking board the operator watches above the chat input; todo_write stays the micro plan for the current turn). Send the ENTIRE board every call — it REPLACES the previous board. Rows: 1-12 (aim 3-7). percent is an integer 0-100 derived from artifact truth: the fraction of that row's acceptance items (plan checkboxes, landed receipts, verified boxes) that hold right now — never an impression. Every row with percent >= 1 MUST carry evidence naming that basis (paths + checked/total). percent 100 requires every acceptance item checked AND the owning receipt to exist. A row at 100 dims but stays visible until every row is 100. Rows may carry items — a 1-20 entry acceptance checklist [{label, done}] the operator expands by clicking the row (done items grey out, open items stay readable); when items are present, percent MUST equal round(done/total x 100) and validation rejects a mismatch, so the visible checklist always adds up to the shown percent. Overall completion is item-weighted: each item is one unit, itemless rows contribute their percent as one unit. Calling this after a dismissal re-opens the board.",
     parameters: {
       type: 'object',
       required: ['rows'],
@@ -149,6 +164,7 @@ function trackingWriteTool() {
                 status: { type: 'string', enum: ['pending', 'active', 'blocked', 'done'] },
                 note: { oneOf: [{ type: 'null' }, { type: 'string' }] },
                 evidence: { oneOf: [{ type: 'null' }, { type: 'string' }] },
+                items: { type: 'array', items: { type: 'object', required: ['label', 'done'], properties: { label: { type: 'string' }, done: { type: 'boolean' } } } },
               },
             },
           },
