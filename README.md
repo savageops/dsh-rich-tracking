@@ -70,17 +70,24 @@ Boards go stale while the agent works. After **8 assistant steps or 6k output to
 | Evidence binding | none | objective text | sources/insights | **evidence per row + git-captured checkpoints** |
 | Where | dock 0 | dock 10 | composer seat | **dock 5** |
 
+## The board's UI grammar
+
+The pill clones the built-in TodoPanel's exact grammar: **36px collapsed height**, native status glyphs (gradient spinner ring for active, circle-check for done, dashed ring for pending), and — since v0.1.1 — **bleed rows**: the row list runs edge-to-edge of the card with 1px hairline dividers between rows (no floating rounded chips), hover and selection tints span the full width, and the header action cluster (align · checkpoint · dismiss · chevron) segments at the pill's right edge, full-height cells split by vertical hairlines. Rows are click-to-expand for item checklists; item checklists grey out with strikethrough as they complete. The UI localizes to English and 简体中文.
+
 ## Architecture
 
 ```
 src/host.js            Node half — tracking_write + tracking_checkpoint tools, the
                        'tracking' session projection (no turn reset), the agent/pre-step
-                       refresh reminder, loopback-fenced /api/rich-tracking/action.
-                       Node builtins only.
-src/tracking-engine.js Pure engine — board validation (self-repairing messages),
-                       projection fold, wire view, percent math. Host-only.
-src/client.bundle.js   Browser half — the dock board: percent-disc pill, rows with
-                       hover-revealed actions, checkpoint before/after strip, tooltips.
+                       refresh reminder + per-turn board reminder, the /track command,
+                       the loopback-fenced /api/rich-tracking/action route (pursue/
+                       delegate/align/dismiss/checkpoint). Node builtins only.
+src/tracking-engine.js Pure engine — board validation (self-repairing messages, item
+                       math), projection fold, wire view, percent math, ledger
+                       rendering. Host-only. 16 node:test cases: npm test.
+src/client.bundle.js   Browser half — the dock board: percent-disc pill, bleed rows
+                       with hover-revealed actions and item checklists, segmented
+                       header actions, checkpoint before/after strip, tooltips.
                        React + client primitives only.
 cordis.patch.yml       Bundle patch inserting the plugin row.
 ```
@@ -94,5 +101,3 @@ No refresh, no polling: `tracking_write` appends a session event → the project
 ## License
 
 [MIT](LICENSE)
-
-<!-- demo checkpoint marker -->
