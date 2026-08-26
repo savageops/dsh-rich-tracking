@@ -370,6 +370,7 @@ window.__ModuleLoader__.load({
 							type: "button",
 							className: "rt-header",
 							"aria-expanded": expanded,
+							"aria-controls": "rt-panel",
 							onClick: () => setExpanded((value) => !value),
 							children: [
 								(0, react_jsx_runtime.jsx)("span", { className: "rt-disc", style: { "--rt-percent": `${view.overallPercent * 3.6}deg`, "--rt-fill-color": fillColor }, "aria-hidden": "true" }),
@@ -406,6 +407,7 @@ window.__ModuleLoader__.load({
 							]
 						}),
 						expanded ? (0, react_jsx_runtime.jsx)("ul", {
+							id: "rt-panel",
 							className: "rt-list",
 							role: "region",
 							"aria-label": t("title"),
