@@ -47,6 +47,10 @@ Per row and board-wide: **Pursue** (make this row the next focus), **Delegate** 
 
 **Delegate** sends the agent a self-contained delegation brief: the row's label, percent, item checklist with done flags, evidence, and note, plus the requirements — a background subagent with read/write access, scoped strictly to the row's task and subtasks, the subagent keeping its **own** `tracking_write` board (scoped to that task, percents updated per step), and verifiable receipts (commits, test results, file paths) folded back into the parent row when the report lands.
 
+### Play mode — auto-engage highest-value work
+
+A ▶/⏸ button in the pill header. When **play** is on (green, pulsing), every `turn/end` triggers auto-engage: the board ranks pending rows by value ratio (active rows first — momentum matters — then by percent descending: highest percent = closest to completion = lowest hanging fruit), names the winner, and sends a followup telling the agent to work on it now. The loop repeats after every turn until paused, the board is dismissed, or every row hits 100. Dismissing auto-pauses.
+
 ### /track — the forced ledger sync
 
 `/track` (optionally `/track <message>`) is a host command in the `/plan` family: it injects the **full ledger plus the tracking doctrine** into the agent's next step as a user-visible message — every row with percent, status, item flags, evidence, and note, followed by the re-derivation directive (read the named artifacts — documentation, code, receipts, user context — recompute percent as checked/total, fix stale items/prose, write the corrected board). With no board yet, it injects the creation directive. The trailing message rides along as the operator's own words. While a live board exists, every user submit also carries a one-line board reminder at the turn's first step (deduped whenever richer tracking context — a `/track` sync, a whip instruction, or a staleness reminder — is already in the assembly).
@@ -65,7 +69,7 @@ Boards go stale while the agent works. After **8 assistant steps or 6k output to
 |---|---|---|---|---|
 | Lifetime | per turn | mission (service) | per tool call | **mission (session events)** |
 | Progress signal | status counts | phase label | answered/total | **per-row % + overall, evidence-bound** |
-| Operator actions | none | pause/resume/edit | answer/reroll/push | **pursue/delegate/align/checkpoint + /track** |
+| Operator actions | none | pause/resume/edit | answer/reroll/push | **pursue/delegate/align/checkpoint/play/pause + /track** |
 | Agent whip | description | wrap-up contexts | pre-flight instructions | **pre-step refresh + action instructions** |
 | Evidence binding | none | objective text | sources/insights | **evidence per row + git-captured checkpoints** |
 | Where | dock 0 | dock 10 | composer seat | **dock 5** |
