@@ -76,6 +76,41 @@ window.__ModuleLoader__.load({
 			"decision.checkpoint-request": "checkpoint",
 			"ago": "ago"
 		};
+		const zh = {
+			"title": "进度",
+			"board.done": "完成",
+			"rows": "行",
+			"row.basis": "依据：",
+			"action.pursue": "推进",
+			"action.pursue.hint": "让这一行成为 agent 的下一个工作重点——作为指令送达它的下一步。",
+			"action.align": "对齐",
+			"action.align.hint": "强制从证据工件重新推导所有百分比——测谎通道。",
+			"action.alignRow.hint": "从该行的证据工件重新推导其百分比。",
+			"action.dismiss": "关闭",
+			"action.dismiss.hint": "关闭整个看板（之后任何 tracking_write 会重新打开它）。",
+			"action.dismissRow.hint": "从看板上移除该行。",
+			"action.checkpoint": "检查点",
+			"action.checkpoint.hint": "让 agent 现在就打一个进度检查点（宿主抓取 git + 看板）。",
+			"checkpoint.since": "自检查点以来",
+			"checkpoint.commits": "个提交",
+			"checkpoint.expand": "展开冻结快照",
+			"checkpoint.collapse": "收起冻结快照",
+			"checkpoint.gitUnavailable": "git 状态不可用",
+			"checkpoint.dirty": "处未提交",
+			"checkpoint.clean": "干净",
+			"status.delivered": "已送达",
+			"status.steer": "将在下一步边界生效",
+			"status.followup": "开启新回合",
+			"status.inject": "已静默送达",
+			"error.offline": "会话离线——请把指令复制到输入框手动发送。",
+			"error.generic": "操作失败",
+			"decision.pursue": "推进",
+			"decision.align": "对齐",
+			"decision.dismiss": "关闭",
+			"decision.dismiss-row": "移除行",
+			"decision.checkpoint-request": "检查点",
+			"ago": "前"
+		};
 		//#endregion
 		//#region lib/styles.css
 		const css = `.rt-root{box-sizing:border-box;width:calc(100% - var(--dsh-composer-side-clearance) - var(--dsh-composer-side-clearance) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));max-width:calc(var(--dsh-composer-card-max-width) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-specific-tip);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);border-radius:12px;flex:none;margin:0 auto;overflow:hidden}
@@ -392,7 +427,7 @@ window.__ModuleLoader__.load({
 		//#region lib/index.js
 		const inject = ["slots", "locale"];
 		function apply(ctx) {
-			ctx.effect(() => ctx.locale.register(NS, { en }), "rich-tracking: dictionaries");
+			ctx.effect(() => ctx.locale.register(NS, { en, zh }), "rich-tracking: dictionaries");
 			ctx.slots.inject("conversation.input.dock", () => ctx.slots.register({
 				name: "conversation.input.dock",
 				id: "tracking",
