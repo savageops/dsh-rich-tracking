@@ -14,6 +14,9 @@
  */
 import { randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
+import { readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+import { homedir } from 'node:os'
 import { boardView, foldTracking, lastTrackingEvent, ledgerContext, nextCheckpointId, nextRevision, overallPercentOf, validateBoard } from './tracking-engine.js'
 
 const API_PREFIX = '/api/rich-tracking'
@@ -23,6 +26,114 @@ const REMINDER_OUTPUT_TOKENS = 6_000
 /** Read-only git probes die after this; absence is recorded, never blocking (design D4). */
 const GIT_TIMEOUT_MS = 1_500
 const ACTION_LIMIT = 100_000
+
+// ── Tracks view: every board, every workspace ────────────────────────────────
+/** Sessions root (same layout the GUI uses: --slug--/<sessionId>/session.jsonl.zstd). */
+const SESSIONS_ROOT = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'sessions')
+/** Per-file scan cache: mtime+size keyed, so repeat opens only read changed logs. */
+const tracksCache = new Map()
+/** Scan budget per request: newest logs first; the rest catch up on later opens. */
+const TRACKS_BUDGET_MS = 8_000
+const ZSTD_MAX_BUFFER = 192 * 1024 * 1024
+
+const execZstd = (file) => new Promise((resolve) => {
+  execFile('zstd', ['-dc', file], { timeout: 4_000, maxBuffer: ZSTD_MAX_BUFFER }, (error, stdout) => {
+    resolve(error !== null ? null : stdout)
+  })
+})
+
+/**
+ * Fold one session log into a Tracks summary. Returns null when the session
+ * never wrote a board (the overwhelming majority) — those cache as null too.
+ */
+async function scanSessionFile(file) {
+  const text = await execZstd(file)
+  if (text === null) return null
+  let state = null
+  let cwd = null
+  let title = null
+  for (const line of text.split('\n')) {
+    if (line === '' || line.length > 2_000_000) continue
+    // Cheap pre-filter: only tracking/session/title lines matter; the log is
+    // overwhelmingly chunk traffic that would otherwise pay a JSON.parse tax.
+    if (line.charCodeAt(0) !== 123) continue
+    if (line.includes('"tracking/') === false && line.includes('"session/title"') === false && line.includes('"type":"session"') === false) continue
+    let event
+    try { event = JSON.parse(line) } catch { continue }
+    const type = event?.type
+    if (type === 'session') cwd = typeof event.data?.cwd === 'string' ? event.data.cwd : cwd
+    else if (type === 'session/title') { if (typeof event.data?.title === 'string' && event.data.title !== '') title = event.data.title }
+    else if (type === 'tracking/write' || type === 'tracking/checkpoint' || type === 'tracking/decision') state = foldTracking(state, event)
+  }
+  const view = boardView(state)
+  if (view === null || view.present !== true) return null
+  return {
+    cwd,
+    title,
+    revision: view.revision,
+    overallPercent: view.overallPercent,
+    allDone: view.allDone === true,
+    playMode: view.playMode === true,
+    rows: view.rows.map((row) => ({
+      id: row.id,
+      label: row.label,
+      percent: row.percent,
+      status: row.status,
+      items: Array.isArray(row.items) ? { done: row.items.filter((item) => item.done === true).length, total: row.items.length } : null,
+    })),
+    lastWriteAt: view.updatedAt ?? null,
+  }
+}
+
+/** All boards across all workspaces, newest activity first. */
+async function scanTracks(ctx, budgetMs = TRACKS_BUDGET_MS) {
+  const startedAt = Date.now()
+  const workspaces = []
+  try {
+    for (const entry of readdirSync(SESSIONS_ROOT, { withFileTypes: true })) {
+      if (entry.isDirectory() && entry.name.startsWith('--') && entry.name.endsWith('--')) workspaces.push(entry.name)
+    }
+  } catch { return { boards: [], scanned: 0, total: 0, workspaces: [] } }
+  const files = []
+  for (const slug of workspaces) {
+    const dir = join(SESSIONS_ROOT, slug)
+    try {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory() === false) continue
+        const file = join(dir, entry.name, 'session.jsonl.zstd')
+        try {
+          const stats = statSync(file)
+          files.push({ file, slug, sessionId: entry.name, mtimeMs: stats.mtimeMs, size: stats.size })
+        } catch { /* no log for this session dir */ }
+      }
+    } catch { /* unreadable workspace dir */ }
+  }
+  // Newest first: live/recent boards surface within the budget; the tail catches up via cache.
+  files.sort((a, b) => b.mtimeMs - a.mtimeMs)
+  const boards = []
+  let scanned = 0
+  for (const candidate of files) {
+    const cached = tracksCache.get(candidate.file)
+    if (cached !== undefined && cached.mtimeMs === candidate.mtimeMs && cached.size === candidate.size) {
+      if (cached.summary !== null) boards.push({ ...cached.summary, slug: candidate.slug, sessionId: candidate.sessionId })
+      scanned += 1
+      continue
+    }
+    if (Date.now() - startedAt > budgetMs) break
+    const summary = await scanSessionFile(candidate.file)
+    tracksCache.set(candidate.file, { mtimeMs: candidate.mtimeMs, size: candidate.size, summary })
+    scanned += 1
+    if (summary !== null) boards.push({ ...summary, slug: candidate.slug, sessionId: candidate.sessionId })
+  }
+  // Liveness: only in-process agents can receive whip actions.
+  for (const board of boards) {
+    const agent = ctx.agents?.get?.(board.sessionId)
+    board.live = agent !== undefined
+    board.agentStatus = agent !== undefined ? agent.status : 'offline'
+  }
+  boards.sort((a, b) => (b.lastWriteAt ?? 0) - (a.lastWriteAt ?? 0) || (b.live === true ? 1 : 0) - (a.live === true ? 1 : 0))
+  return { boards, scanned, total: files.length, workspaces }
+}
 
 export const name = 'dsh-rich-tracking'
 export const inject = ['tools', 'webServer', 'agents', 'systemPrompt']
@@ -536,6 +647,16 @@ export function apply(ctx) {
   ctx.effect(() => {
     const dispose = ctx.webServer.register({
       kind: 'exact',
+      path: `${API_PREFIX}/tracks`,
+      handler: (req, res) => {
+        if (req.method !== 'GET') { writeJson(res, 405, { ok: false, error: 'method-not-allowed' }); return }
+        if (!guard(req, res)) return
+        scanTracks(ctx).then((result) => writeJson(res, 200, { ok: true, ...result }))
+          .catch((error) => writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) }))
+      },
+    })
+    const disposeAction = ctx.webServer.register({
+      kind: 'exact',
       path: `${API_PREFIX}/action`,
       handler: async (req, res) => {
         if (req.method !== 'POST') { writeJson(res, 405, { ok: false, error: 'method-not-allowed' }); return }
@@ -578,6 +699,9 @@ export function apply(ctx) {
         writeJson(res, 200, { ok: true, delivered: 'inject' })
       },
     })
-    return dispose
-  }, 'rich-tracking: action route')
+    return () => {
+      disposeAction()
+      dispose()
+    }
+  }, 'rich-tracking: action + tracks routes')
 }

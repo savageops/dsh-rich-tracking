@@ -46,6 +46,21 @@ window.__ModuleLoader__.load({
 			"board.done": "done",
 			"rows": "rows",
 			"row.basis": "basis:",
+			"tracks.entry": "Tracks",
+			"tracks.tooltip": "All tracking boards across workspaces — open, expand, start, and trigger work",
+			"tracks.title": "Tracks",
+			"tracks.scanning": "Scanning sessions…",
+			"tracks.refresh": "Refresh",
+			"tracks.close": "Close",
+			"tracks.boards": "board(s)",
+			"tracks.scanned": "scanned",
+			"tracks.empty": "No tracking boards yet — boards appear here once a session calls tracking_write.",
+			"tracks.live": "live",
+			"tracks.offline": "offline",
+			"tracks.playing": "PLAY",
+			"tracks.play": "Play",
+			"tracks.pause": "Pause",
+			"tracks.offlineHint": "Session offline — open it in the sidebar first, then actions can reach it.",
 		"row.items": "items",
 		"row.expand": "show row items",
 		"row.collapse": "hide row items",
@@ -88,6 +103,21 @@ window.__ModuleLoader__.load({
 			"board.done": "完成",
 			"rows": "行",
 			"row.basis": "依据：",
+			"tracks.entry": "追踪",
+			"tracks.tooltip": "所有工作区的追踪板——查看、展开、启动与触发",
+			"tracks.title": "追踪",
+			"tracks.scanning": "扫描会话中…",
+			"tracks.refresh": "刷新",
+			"tracks.close": "关闭",
+			"tracks.boards": "块板",
+			"tracks.scanned": "已扫描",
+			"tracks.empty": "还没有追踪板——会话调用 tracking_write 后会出现在这里。",
+			"tracks.live": "在线",
+			"tracks.offline": "离线",
+			"tracks.playing": "播放中",
+			"tracks.play": "启动",
+			"tracks.pause": "暂停",
+			"tracks.offlineHint": "会话离线——先在侧栏打开该会话，动作才能送达。",
 		"row.items": "项",
 		"row.expand": "展开行内条目",
 		"row.collapse": "收起行内条目",
@@ -512,6 +542,310 @@ window.__ModuleLoader__.load({
 			});
 		}
 		//#endregion
+		//#region lib/tracks.js
+		/** Tracks sidebar view — pure DOM (React overlays don't resolve react-dom/client). */
+		const TRACKS_ENTRY = "data-dsh-rich-tracking-tracks";
+		const TRACKS_FAMILY = ["[data-dsh-taskboard-entry]", "[data-dsh-ssh-entry]", "[data-dsh-skill-explorer-entry]", "[data-dsh-generative-ideas-entry]", "[data-dsh-rich-context-entry]", `[${TRACKS_ENTRY}]`];
+		const TRACKS_ICON = `<svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="3.2" cy="3.2" r="1.7"/><circle cx="12.8" cy="12.8" r="1.7"/><path d="M4.4 4.4 L7.2 7.2"/><circle cx="8.6" cy="8.6" r="1.4"/><path d="M9.7 9.7 L11.7 11.7"/></svg>`;
+		const TRACKS_CSS = `.trk2-entry{appearance:none;box-sizing:border-box;display:flex;align-items:center;gap:8px;width:100%;height:36px;padding:0 10px;font:inherit;font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary);background:0 0;border:none;border-radius:8px;cursor:pointer;text-align:left}
+.trk2-entry:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.trk2-entryIcon{display:inline-flex;justify-content:center;align-items:center;width:24px;height:24px;flex:none;color:var(--dsw-alias-label-tertiary)}
+.trk2-entryLabel{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trk2-scrim{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:24px}
+.trk2-card{width:100%;max-width:880px;max-height:min(92vh,1200px);border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-specific-tip);border-radius:12px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.trk2-card,.trk2-card *{box-sizing:border-box}
+.trk2-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--dsw-alias-border-l1)}
+.trk2-title{font-size:14px;font-weight:500;line-height:20px;color:var(--dsw-alias-label-primary);flex:none}
+.trk2-hint{flex:1;min-width:0;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trk2-iconBtn{flex:none;width:28px;height:28px;display:grid;place-items:center;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;border-radius:999px;font-size:15px}
+.trk2-iconBtn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.trk2-body{flex:1;min-height:0;overflow-y:auto;scrollbar-width:none}
+.trk2-body::-webkit-scrollbar{display:none}
+.trk2-wsHead{display:flex;align-items:baseline;gap:8px;padding:10px 16px 4px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:14px;text-transform:uppercase;letter-spacing:.05em}
+.trk2-wsPath{font-family:ui-monospace,monospace;text-transform:none;letter-spacing:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trk2-board{border-top:1px solid var(--dsw-alias-border-l1)}
+.trk2-boardHead{display:flex;align-items:center;gap:8px;width:100%;padding:9px 16px;background:0 0;border:none;cursor:pointer;font:inherit;text-align:left;color:inherit}
+.trk2-boardHead:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.trk2-pct{flex:none;font-size:12px;font-weight:600;color:var(--dsw-alias-state-business-primary);min-width:34px;text-align:right}
+.trk2-boardAll .trk2-pct{color:var(--dsw-alias-state-success-primary)}
+.trk2-name{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.trk2-title2{color:var(--dsw-alias-label-primary);font-size:13px;line-height:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trk2-meta{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trk2-badge{flex:none;font-size:10.5px;line-height:14px;border:1px solid var(--dsw-alias-border-l2);border-radius:4px;padding:0 5px;color:var(--dsw-alias-label-secondary)}
+.trk2-badgeLive{color:var(--dsw-alias-state-success-primary);border-color:currentColor}
+.trk2-badgePlay{color:var(--dsw-alias-state-business-primary);border-color:currentColor}
+.trk2-chevron{flex:none;color:var(--dsw-alias-label-tertiary);transition:transform .12s ease;display:inline-block}
+.trk2-boardOpen .trk2-chevron{transform:rotate(90deg)}
+.trk2-rows{display:none;border-top:1px solid var(--dsw-alias-border-l1)}
+.trk2-boardOpen .trk2-rows{display:block}
+.trk2-row{display:flex;align-items:center;gap:8px;padding:6px 16px 6px 26px;border-bottom:1px solid color-mix(in srgb, var(--dsw-alias-border-l1) 60%, transparent)}
+.trk2-rowLabel{flex:1;min-width:0;color:var(--dsw-alias-label-secondary);font-size:12.5px;line-height:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trk2-rowPct{flex:none;font-size:11.5px;color:var(--dsw-alias-label-secondary);min-width:30px;text-align:right}
+.trk2-rowDone .trk2-rowLabel,.trk2-rowDone .trk2-rowPct{opacity:.5}
+.trk2-status{color:var(--dsw-alias-label-tertiary);font-size:10.5px;line-height:14px;flex:none}
+.trk2-actions{display:flex;flex-wrap:wrap;gap:4px;padding:7px 16px;border-top:1px solid color-mix(in srgb, var(--dsw-alias-border-l1) 60%, transparent)}
+.trk2-act{appearance:none;background:0 0;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:2px 9px;font:inherit;font-size:11.5px;line-height:16px;color:var(--dsw-alias-label-secondary);cursor:pointer}
+.trk2-act:hover:not(:disabled){border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary)}
+.trk2-act:disabled{opacity:.4;cursor:default}
+.trk2-foot{display:flex;align-items:center;border-top:1px solid var(--dsw-alias-border-l1);padding:6px 12px}
+.trk2-footStatus{flex:1;min-width:0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trk2-empty{padding:24px 16px;color:var(--dsw-alias-label-tertiary);font-size:13px;text-align:center}`;
+
+		const tt = (key) => (/^zh/i.test(navigator.language ?? "") ? zh : en)[key] ?? en[key] ?? key;
+
+		async function fetchTracks() {
+			const res = await fetch(`${API}/tracks`, { cache: "no-store" });
+			return res.json();
+		}
+
+		function tracksSidebarRoot() {
+			const column = document.querySelector('[data-pane="sidebar"], [class*="sidebarCol"]');
+			if (column === null) return undefined;
+			return column.querySelector('[class*="logoRow"]')?.parentElement ?? column.firstElementChild ?? undefined;
+		}
+		function tracksNewSessionButton(root) {
+			const nested = root.querySelector('button[class*="newSession"]');
+			if (nested !== null) return nested;
+			for (const child of root.children) if (child.tagName === "BUTTON") return child;
+			return undefined;
+		}
+		function mountTracksEntry(onToggle) {
+			if (document.querySelector(`[${TRACKS_ENTRY}]`) !== null) return () => {};
+			const entry = document.createElement("button");
+			entry.type = "button";
+			entry.setAttribute(TRACKS_ENTRY, "");
+			entry.setAttribute("data-dsh-plugin", "rich-tracking");
+			entry.setAttribute("data-dsh-part", "tracks-sidebar-entry");
+			entry.className = "trk2-entry";
+			const icon = document.createElement("span");
+			icon.className = "trk2-entryIcon";
+			icon.innerHTML = TRACKS_ICON;
+			const text = document.createElement("span");
+			text.className = "trk2-entryLabel";
+			text.textContent = tt("tracks.entry");
+			entry.title = tt("tracks.tooltip");
+			entry.append(icon, text);
+			entry.addEventListener("click", onToggle);
+			let root, placed = false;
+			const place = () => {
+				const button = root === undefined ? undefined : tracksNewSessionButton(root);
+				if (button === undefined) return false;
+				const row = button.closest('[class*="logoRow"]');
+				const base = row !== null && row.parentElement === root ? row : button;
+				const family = Array.from(root.children).filter((el) => el instanceof HTMLElement && el.matches(TRACKS_FAMILY.join(", ")));
+				const anchor = family.length > 0 ? family[family.length - 1].nextElementSibling : base.nextElementSibling;
+				root.insertBefore(entry, anchor);
+				return true;
+			};
+			const tryPlace = () => {
+				if (root !== undefined && !root.isConnected) { rootObserver.disconnect(); root = undefined; placed = false; }
+				if (placed && document.body.contains(entry)) return;
+				root ??= tracksSidebarRoot();
+				if (root === undefined) return;
+				placed = place();
+				if (placed) rootObserver.observe(root, { childList: true, subtree: true });
+			};
+			const waitObserver = new MutationObserver(tryPlace);
+			waitObserver.observe(document.body, { childList: true, subtree: true });
+			const rootObserver = new MutationObserver(() => {
+				if (root === undefined || !root.isConnected) { placed = false; tryPlace(); return; }
+				if (!root.contains(entry)) placed = place();
+			});
+			tryPlace();
+			return () => { waitObserver.disconnect(); rootObserver.disconnect(); entry.remove(); };
+		}
+
+		function createTracksPanel(onClose) {
+			const scrim = document.createElement("div");
+			scrim.className = "trk2-scrim";
+			scrim.addEventListener("click", (event) => { if (event.target === scrim) onClose(); });
+			const card = document.createElement("div");
+			card.className = "trk2-card";
+			card.setAttribute("aria-label", tt("tracks.title"));
+			const head = document.createElement("div");
+			head.className = "trk2-head";
+			const title = document.createElement("span");
+			title.className = "trk2-title";
+			title.textContent = tt("tracks.title");
+			const hint = document.createElement("span");
+			hint.className = "trk2-hint";
+			hint.textContent = tt("tracks.scanning");
+			const refreshBtn = document.createElement("button");
+			refreshBtn.type = "button";
+			refreshBtn.className = "trk2-iconBtn";
+			refreshBtn.textContent = "\u27f3";
+			refreshBtn.title = tt("tracks.refresh");
+			refreshBtn.addEventListener("click", () => load());
+			const closeBtn = document.createElement("button");
+			closeBtn.type = "button";
+			closeBtn.className = "trk2-iconBtn";
+			closeBtn.textContent = "\u00d7";
+			closeBtn.title = tt("tracks.close");
+			closeBtn.addEventListener("click", onClose);
+			head.append(title, hint, refreshBtn, closeBtn);
+			const body = document.createElement("div");
+			body.className = "trk2-body";
+			const foot = document.createElement("div");
+			foot.className = "trk2-foot";
+			const footStatus = document.createElement("span");
+			footStatus.className = "trk2-footStatus";
+			foot.append(footStatus);
+			card.append(head, body, foot);
+			scrim.append(card);
+
+			const setStatus = (text, isError) => { footStatus.textContent = text ?? ""; footStatus.style.color = isError === true ? "var(--dsw-alias-state-error-primary)" : ""; };
+
+			const act = async (board, kind, rowId) => {
+				if (board.live !== true) { setStatus(tt("tracks.offlineHint"), true); return; }
+				try {
+					const result = await postAction(board.sessionId, kind, rowId);
+					setStatus(`${board.title ?? board.sessionId.slice(0, 13)} — ${tt("status.delivered")}: ${tt(`status.${result.delivered}`)}`);
+				} catch (cause) {
+					setStatus(cause.message === "session-offline" ? tt("error.offline") : `${tt("error.generic")}: ${cause.message}`, true);
+				}
+			};
+
+			const render = (data) => {
+				body.innerHTML = "";
+				hint.textContent = `${data.boards.length} ${tt("tracks.boards")} · ${tt("tracks.scanned")} ${data.scanned}/${data.total}`;
+				if (data.boards.length === 0) {
+					const empty = document.createElement("div");
+					empty.className = "trk2-empty";
+					empty.textContent = tt("tracks.empty");
+					body.append(empty);
+					return;
+				}
+				const byWorkspace = new Map();
+				for (const board of data.boards) {
+					const key = board.slug ?? "—";
+					if (byWorkspace.has(key) === false) byWorkspace.set(key, []);
+					byWorkspace.get(key).push(board);
+				}
+				for (const [slug, boards] of byWorkspace) {
+					const wsHead = document.createElement("div");
+					wsHead.className = "trk2-wsHead";
+					const wsName = document.createElement("span");
+					wsName.textContent = `${slug} · ${boards.length}`;
+					const wsPath = document.createElement("span");
+					wsPath.className = "trk2-wsPath";
+					wsPath.textContent = boards[0]?.cwd ?? "";
+					wsHead.append(wsName, wsPath);
+					body.append(wsHead);
+					for (const board of boards) body.append(renderBoard(board));
+				}
+			};
+
+			const renderBoard = (board) => {
+				const wrap = document.createElement("div");
+				wrap.className = board.allDone === true ? "trk2-board trk2-boardAll" : "trk2-board";
+				const headEl = document.createElement("button");
+				headEl.type = "button";
+				headEl.className = "trk2-boardHead";
+				const pct = document.createElement("span");
+				pct.className = "trk2-pct";
+				pct.textContent = `${board.overallPercent}%`;
+				const name = document.createElement("span");
+				name.className = "trk2-name";
+				const title2 = document.createElement("span");
+				title2.className = "trk2-title2";
+				title2.textContent = board.title ?? board.sessionId;
+				const meta = document.createElement("span");
+				meta.className = "trk2-meta";
+				const doneCount = board.rows.filter((row) => row.percent === 100).length;
+				meta.textContent = `${board.sessionId.slice(0, 13)} · r${board.revision} · ${doneCount}/${board.rows.length} ${tt("rows")} · ${relativeMinutes(board.lastWriteAt ?? Date.now(), Date.now())} ${tt("ago")}`;
+				name.append(title2, meta);
+				const badges = [];
+				const liveBadge = document.createElement("span");
+				liveBadge.className = board.live === true ? "trk2-badge trk2-badgeLive" : "trk2-badge";
+				liveBadge.textContent = board.live === true ? `${tt("tracks.live")} · ${board.agentStatus}` : tt("tracks.offline");
+				badges.push(liveBadge);
+				if (board.playMode === true) {
+					const playBadge = document.createElement("span");
+					playBadge.className = "trk2-badge trk2-badgePlay";
+					playBadge.textContent = tt("tracks.playing");
+					badges.push(playBadge);
+				}
+				const chevron = document.createElement("span");
+				chevron.className = "trk2-chevron";
+				chevron.textContent = "\u203a";
+				headEl.append(pct, name, ...badges, chevron);
+				headEl.addEventListener("click", () => wrap.classList.toggle("trk2-boardOpen"));
+				const rowsEl = document.createElement("div");
+				rowsEl.className = "trk2-rows";
+				for (const row of board.rows) {
+					const rowEl = document.createElement("div");
+					rowEl.className = row.percent === 100 ? "trk2-row trk2-rowDone" : "trk2-row";
+					const rowLabel = document.createElement("span");
+					rowLabel.className = "trk2-rowLabel";
+					rowLabel.textContent = row.label;
+					rowLabel.title = row.label;
+					rowEl.append(rowLabel);
+					if (row.items !== null && row.items !== undefined) {
+						const items = document.createElement("span");
+						items.className = "trk2-status";
+						items.textContent = `${row.items.done}/${row.items.total}`;
+						rowEl.append(items);
+					}
+					const status = document.createElement("span");
+					status.className = "trk2-status";
+					status.textContent = row.status;
+					const rowPct = document.createElement("span");
+					rowPct.className = "trk2-rowPct";
+					rowPct.textContent = `${row.percent}%`;
+					rowEl.append(status, rowPct);
+					rowsEl.append(rowEl);
+				}
+				const actions = document.createElement("div");
+				actions.className = "trk2-actions";
+				const addButton = (label, kind, rowId) => {
+					const btn = document.createElement("button");
+					btn.type = "button";
+					btn.className = "trk2-act";
+					btn.textContent = label;
+					if (board.live !== true) { btn.disabled = true; btn.title = tt("tracks.offlineHint"); }
+					btn.addEventListener("click", () => act(board, kind, rowId));
+					actions.append(btn);
+				};
+				addButton(board.playMode === true ? tt("tracks.pause") : tt("tracks.play"), board.playMode === true ? "pause" : "play");
+				addButton(tt("action.checkpoint"), "checkpoint-request");
+				addButton(tt("action.align"), "align");
+				addButton(tt("action.dismiss"), "dismiss");
+				for (const row of board.rows) {
+					addButton(`\u2197 ${row.label.slice(0, 24)}${row.label.length > 24 ? "\u2026" : ""}`, "pursue", row.id);
+				}
+				rowsEl.append(actions);
+				wrap.append(headEl, rowsEl);
+				return wrap;
+			};
+
+			const load = () => {
+				hint.textContent = tt("tracks.scanning");
+				fetchTracks().then((data) => {
+					if (data.ok !== true) throw new Error(data.error);
+					render(data);
+				}).catch((cause) => { hint.textContent = `${tt("error.generic")}: ${cause.message}`; });
+			};
+			load();
+			return scrim;
+		}
+
+		function installTracksView() {
+			const tagId = "dsh-rich-tracking/tracks.css";
+			if (document.querySelector(`style[data-plugin-css="${tagId}"]`) === null) {
+				const tag = document.createElement("style");
+				tag.dataset.pluginCss = tagId;
+				tag.textContent = TRACKS_CSS;
+				document.head.appendChild(tag);
+			}
+			let panel = null;
+			const close = () => { if (panel !== null) { panel.remove(); panel = null; } };
+			const toggle = () => {
+				if (panel !== null) { close(); return; }
+				panel = createTracksPanel(close);
+				document.body.appendChild(panel);
+			};
+			return mountTracksEntry(toggle);
+		}
 		//#region lib/index.js
 		const inject = ["slots", "locale"];
 		function apply(ctx) {
@@ -522,6 +856,7 @@ window.__ModuleLoader__.load({
 				order: 5,
 				locale: NS
 			}, TrackingDock));
+			ctx.effect(() => installTracksView(), "rich-tracking: tracks sidebar view");
 		}
 		exports.apply = apply;
 		exports.inject = inject;
