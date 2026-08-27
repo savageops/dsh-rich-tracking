@@ -34,6 +34,12 @@ const SESSIONS_ROOT = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'ses
 const tracksCache = new Map()
 /** Scan budget per request: newest logs first; the rest catch up on later opens. */
 const TRACKS_BUDGET_MS = 8_000
+/** Cache TTL: a live session's log keeps changing; within this window the cached fold is served (review P2). */
+const TRACKS_CACHE_TTL_MS = 3_000
+/** Skip logs whose compressed size implies crossing the execFile maxBuffer cliff (review P2). */
+const TRACKS_MAX_COMPRESSED_BYTES = 48 * 1024 * 1024
+/** Per-file in-flight scans, so concurrent /tracks requests don't double-zstd (review P2). */
+const tracksInFlight = new Map()
 const ZSTD_MAX_BUFFER = 192 * 1024 * 1024
 
 const execZstd = (file) => new Promise((resolve) => {
@@ -61,11 +67,21 @@ async function scanSessionFile(file) {
     let event
     try { event = JSON.parse(line) } catch { continue }
     const type = event?.type
-    if (type === 'session') cwd = typeof event.data?.cwd === 'string' ? event.data.cwd : cwd
+    if (type === 'session') {
+      // The session event is FLAT (cwd at top level); tolerate a data wrapper too.
+      const flat = typeof event.cwd === 'string' ? event.cwd : undefined
+      const wrapped = typeof event.data?.cwd === 'string' ? event.data.cwd : undefined
+      cwd = flat ?? wrapped ?? cwd
+    }
     else if (type === 'session/title') { if (typeof event.data?.title === 'string' && event.data.title !== '') title = event.data.title }
-    else if (type === 'tracking/write' || type === 'tracking/checkpoint' || type === 'tracking/decision') state = foldTracking(state, event)
+    else if (type === 'tracking/write' || type === 'tracking/checkpoint' || type === 'tracking/decision') {
+      // Poison-pill guard (review P2): one malformed tracking event must 500 the
+      // route forever — wrap the fold so the file caches as boardless instead.
+      try { state = foldTracking(state, event) } catch { state = state ?? null }
+    }
   }
-  const view = boardView(state)
+  let view = null
+  try { view = boardView(state) } catch { view = null }
   if (view === null || view.present !== true) return null
   return {
     cwd,
@@ -91,37 +107,57 @@ async function scanTracks(ctx, budgetMs = TRACKS_BUDGET_MS) {
   const workspaces = []
   try {
     for (const entry of readdirSync(SESSIONS_ROOT, { withFileTypes: true })) {
-      if (entry.isDirectory() && entry.name.startsWith('--') && entry.name.endsWith('--')) workspaces.push(entry.name)
+      if (entry.isDirectory() && entry.name.startsWith('--') && entry.name.endsWith('--')) workspaces.push(entry.name.slice(2, -2))
     }
   } catch { return { boards: [], scanned: 0, total: 0, workspaces: [] } }
   const files = []
-  for (const slug of workspaces) {
-    const dir = join(SESSIONS_ROOT, slug)
+  for (const slugName of workspaces) {
+    const dir = join(SESSIONS_ROOT, `--${slugName}--`)
     try {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         if (entry.isDirectory() === false) continue
         const file = join(dir, entry.name, 'session.jsonl.zstd')
         try {
           const stats = statSync(file)
-          files.push({ file, slug, sessionId: entry.name, mtimeMs: stats.mtimeMs, size: stats.size })
+          // slug carries the display name (delimiters stripped, review P3)
+          files.push({ file, slug: slugName, sessionId: entry.name, mtimeMs: stats.mtimeMs, size: stats.size })
         } catch { /* no log for this session dir */ }
       }
     } catch { /* unreadable workspace dir */ }
   }
   // Newest first: live/recent boards surface within the budget; the tail catches up via cache.
   files.sort((a, b) => b.mtimeMs - a.mtimeMs)
+  // Evict cache entries for sessions that no longer exist on disk (review P2).
+  const livePaths = new Set(files.map((candidate) => candidate.file))
+  for (const key of tracksCache.keys()) if (livePaths.has(key) === false) tracksCache.delete(key)
+
   const boards = []
   let scanned = 0
   for (const candidate of files) {
     const cached = tracksCache.get(candidate.file)
-    if (cached !== undefined && cached.mtimeMs === candidate.mtimeMs && cached.size === candidate.size) {
+    const exact = cached !== undefined && cached.mtimeMs === candidate.mtimeMs && cached.size === candidate.size
+    // TTL tolerance: a live session's stat changes on every append; serving the
+    // sub-TTL fold bounds hot-log rescans to one per window.
+    const withinTtl = cached !== undefined && Date.now() - (cached.readAt ?? 0) < TRACKS_CACHE_TTL_MS
+    if (exact || withinTtl) {
       if (cached.summary !== null) boards.push({ ...cached.summary, slug: candidate.slug, sessionId: candidate.sessionId })
       scanned += 1
       continue
     }
     if (Date.now() - startedAt > budgetMs) break
-    const summary = await scanSessionFile(candidate.file)
-    tracksCache.set(candidate.file, { mtimeMs: candidate.mtimeMs, size: candidate.size, summary })
+    if (candidate.size > TRACKS_MAX_COMPRESSED_BYTES) {
+      tracksCache.set(candidate.file, { mtimeMs: candidate.mtimeMs, size: candidate.size, summary: null, readAt: Date.now() })
+      scanned += 1
+      continue
+    }
+    let pending = tracksInFlight.get(candidate.file)
+    if (pending === undefined) {
+      pending = scanSessionFile(candidate.file)
+      tracksInFlight.set(candidate.file, pending)
+      pending.finally(() => tracksInFlight.delete(candidate.file)).catch(() => {})
+    }
+    const summary = await pending
+    tracksCache.set(candidate.file, { mtimeMs: candidate.mtimeMs, size: candidate.size, summary, readAt: Date.now() })
     scanned += 1
     if (summary !== null) boards.push({ ...summary, slug: candidate.slug, sessionId: candidate.sessionId })
   }
@@ -649,10 +685,13 @@ export function apply(ctx) {
       kind: 'exact',
       path: `${API_PREFIX}/tracks`,
       handler: (req, res) => {
-        if (req.method !== 'GET') { writeJson(res, 405, { ok: false, error: 'method-not-allowed' }); return }
         if (!guard(req, res)) return
+        if (req.method !== 'GET') { writeJson(res, 405, { ok: false, error: 'method-not-allowed' }); return }
         scanTracks(ctx).then((result) => writeJson(res, 200, { ok: true, ...result }))
-          .catch((error) => writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) }))
+          .catch((error) => {
+            console.warn(`[dsh-rich-tracking] tracks scan failed: ${error instanceof Error ? error.message : String(error)}`)
+            writeJson(res, 500, { ok: false, error: 'scan-failed' })
+          })
       },
     })
     const disposeAction = ctx.webServer.register({

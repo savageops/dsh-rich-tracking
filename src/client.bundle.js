@@ -695,17 +695,33 @@ window.__ModuleLoader__.load({
 
 			const setStatus = (text, isError) => { footStatus.textContent = text ?? ""; footStatus.style.color = isError === true ? "var(--dsw-alias-state-error-primary)" : ""; };
 
+			let busy = false;
 			const act = async (board, kind, rowId) => {
+				if (busy === true) return;
 				if (board.live !== true) { setStatus(tt("tracks.offlineHint"), true); return; }
+				busy = true;
+				card.querySelectorAll(".trk2-act").forEach((btn) => { btn.disabled = true; });
 				try {
 					const result = await postAction(board.sessionId, kind, rowId);
+					// Optimistic local update (review P2): the whip appends a decision
+					// event but the scanner cache serves the pre-action fold for a beat.
+					if (kind === "play") board.playMode = true;
+					if (kind === "pause") board.playMode = false;
+					if (kind === "dismiss") { close(); return; }
+					render({ boards: lastData.boards, scanned: lastData.scanned, total: lastData.total });
 					setStatus(`${board.title ?? board.sessionId.slice(0, 13)} — ${tt("status.delivered")}: ${tt(`status.${result.delivered}`)}`);
 				} catch (cause) {
 					setStatus(cause.message === "session-offline" ? tt("error.offline") : `${tt("error.generic")}: ${cause.message}`, true);
+				} finally {
+					busy = false;
+					card.querySelectorAll(".trk2-act").forEach((btn) => { if (btn.dataset.offline !== "true") btn.disabled = false; });
 				}
 			};
 
+			let lastData = { boards: [], scanned: 0, total: 0 };
+			const expandedBoards = new Set();
 			const render = (data) => {
+				lastData = data;
 				body.innerHTML = "";
 				hint.textContent = `${data.boards.length} ${tt("tracks.boards")} · ${tt("tracks.scanned")} ${data.scanned}/${data.total}`;
 				if (data.boards.length === 0) {
@@ -752,7 +768,8 @@ window.__ModuleLoader__.load({
 				const meta = document.createElement("span");
 				meta.className = "trk2-meta";
 				const doneCount = board.rows.filter((row) => row.percent === 100).length;
-				meta.textContent = `${board.sessionId.slice(0, 13)} · r${board.revision} · ${doneCount}/${board.rows.length} ${tt("rows")} · ${relativeMinutes(board.lastWriteAt ?? Date.now(), Date.now())} ${tt("ago")}`;
+				const age = board.lastWriteAt !== null && board.lastWriteAt !== undefined ? `${relativeMinutes(board.lastWriteAt, Date.now())} ${tt("ago")}` : "—";
+				meta.textContent = `${board.sessionId.slice(0, 13)} · r${board.revision} · ${doneCount}/${board.rows.length} ${tt("rows")} · ${age}`;
 				name.append(title2, meta);
 				const badges = [];
 				const liveBadge = document.createElement("span");
@@ -769,7 +786,12 @@ window.__ModuleLoader__.load({
 				chevron.className = "trk2-chevron";
 				chevron.textContent = "\u203a";
 				headEl.append(pct, name, ...badges, chevron);
-				headEl.addEventListener("click", () => wrap.classList.toggle("trk2-boardOpen"));
+				headEl.addEventListener("click", () => {
+					wrap.classList.toggle("trk2-boardOpen");
+					if (wrap.classList.contains("trk2-boardOpen") === true) expandedBoards.add(board.sessionId);
+					else expandedBoards.delete(board.sessionId);
+				});
+				if (expandedBoards.has(board.sessionId) === true) wrap.classList.add("trk2-boardOpen");
 				const rowsEl = document.createElement("div");
 				rowsEl.className = "trk2-rows";
 				for (const row of board.rows) {
@@ -802,7 +824,7 @@ window.__ModuleLoader__.load({
 					btn.type = "button";
 					btn.className = "trk2-act";
 					btn.textContent = label;
-					if (board.live !== true) { btn.disabled = true; btn.title = tt("tracks.offlineHint"); }
+					if (board.live !== true) { btn.disabled = true; btn.title = tt("tracks.offlineHint"); btn.dataset.offline = "true"; }
 					btn.addEventListener("click", () => act(board, kind, rowId));
 					actions.append(btn);
 				};
@@ -838,13 +860,20 @@ window.__ModuleLoader__.load({
 				document.head.appendChild(tag);
 			}
 			let panel = null;
-			const close = () => { if (panel !== null) { panel.remove(); panel = null; } };
+			const onKey = (event) => { if (event.key === "Escape") { event.stopPropagation(); close(); } };
+			const close = () => {
+				if (panel !== null) { panel.remove(); panel = null; }
+				document.removeEventListener("keydown", onKey, true);
+			};
 			const toggle = () => {
 				if (panel !== null) { close(); return; }
 				panel = createTracksPanel(close);
 				document.body.appendChild(panel);
+				document.addEventListener("keydown", onKey, true);
 			};
-			return mountTracksEntry(toggle);
+			const disposeEntry = mountTracksEntry(toggle);
+			// Review P1: the open panel must die with the plugin, not orphan a z-90 scrim.
+			return () => { disposeEntry(); close(); };
 		}
 		//#region lib/index.js
 		const inject = ["slots", "locale"];
