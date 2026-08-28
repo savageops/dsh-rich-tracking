@@ -182,3 +182,37 @@ test('ledgerContext: full view renders rows, item flags, evidence, and the re-de
   assert.match(text, /Re-derive this ledger now/)
   assert.match(text, /update percents and item flags after every completed step/)
 })
+
+test('play mode survives whole-board writes (goal-mode continuation semantics)', () => {
+  const write = (revision, percent) => ({
+    type: 'tracking/write',
+    data: { revision, rows: [validRow({ percent, evidence: 'x: 1/1' })], note: null, git: null, commitsAhead: null, at: revision },
+  })
+  let state = null
+  state = foldTracking(state, write(1, 10))
+  assert.equal(boardView(state).playMode, false)
+  state = foldTracking(state, { type: 'tracking/decision', data: { kind: 'play', rowId: null, at: 2 } })
+  assert.equal(boardView(state).playMode, true)
+  // The engaged turn calls tracking_write — the loop must NOT disarm.
+  state = foldTracking(state, write(2, 40))
+  assert.equal(boardView(state).playMode, true, 'write must preserve playMode')
+  state = foldTracking(state, write(3, 80))
+  assert.equal(boardView(state).playMode, true, 'repeated writes must preserve playMode')
+  // Operator-controlled stops still stop it.
+  state = foldTracking(state, { type: 'tracking/decision', data: { kind: 'pause', rowId: null, at: 4 } })
+  assert.equal(boardView(state).playMode, false)
+  state = foldTracking(state, { type: 'tracking/decision', data: { kind: 'play', rowId: null, at: 5 } })
+  assert.equal(boardView(state).playMode, true)
+  state = foldTracking(state, { type: 'tracking/decision', data: { kind: 'dismiss', rowId: null, at: 6 } })
+  assert.equal(boardView(state).present, false)
+  assert.equal(boardView(state).playMode, false, 'dismiss disarms play mode')
+})
+
+test('play mode stops naturally at allDone', () => {
+  let state = null
+  state = foldTracking(state, { type: 'tracking/write', data: { revision: 1, rows: [validRow({ percent: 100, evidence: 'qc: 1/1' })], note: null, git: null, commitsAhead: null, at: 1 } })
+  state = foldTracking(state, { type: 'tracking/decision', data: { kind: 'play', rowId: null, at: 2 } })
+  const view = boardView(state)
+  assert.equal(view.playMode, true)
+  assert.equal(view.allDone, true, 'allDone boards end the engage loop host-side')
+})

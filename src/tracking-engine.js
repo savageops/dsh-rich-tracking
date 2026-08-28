@@ -187,6 +187,11 @@ export function foldTracking(state, event) {
       updatedAt: data.at,
       dismissedAt: null,
       dismissedRows: [],
+      // Play mode is an operator MODE, not board content: a whole-board write
+      // (which every auto-engaged turn produces) must not silently disarm the
+      // continuation loop — only pause/dismiss decisions clear it (goal-mode
+      // semantics: continue until complete or operator-blocked).
+      playMode: state?.playMode === true,
       lastCheckpoint: state?.lastCheckpoint ?? null,
       lastDecision: state?.lastDecision ?? null,
     }
