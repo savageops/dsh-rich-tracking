@@ -26,6 +26,7 @@ window.__ModuleLoader__.load({
 				method: "POST",
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify(rowId === undefined ? { sessionId, kind } : { sessionId, kind, rowId }),
+				signal: AbortSignal.timeout(15_000),
 			});
 			const body = await res.json().catch(() => ({ ok: false, error: "bad-host-response" }));
 			if (!res.ok || body.ok !== true) throw new Error(body.error ?? `action failed: HTTP ${res.status}`);
@@ -93,6 +94,9 @@ window.__ModuleLoader__.load({
 			"error.generic": "Action failed",
 			"decision.pursue": "pursue",
 			"decision.align": "align",
+			"decision.play": "play",
+			"decision.pause": "pause",
+			"decision.delegate": "delegate",
 			"decision.dismiss": "dismiss",
 			"decision.dismiss-row": "dismiss row",
 			"decision.checkpoint-request": "checkpoint",
@@ -150,6 +154,9 @@ window.__ModuleLoader__.load({
 			"error.generic": "操作失败",
 			"decision.pursue": "推进",
 			"decision.align": "对齐",
+			"decision.play": "播放",
+			"decision.pause": "暂停",
+			"decision.delegate": "委托",
 			"decision.dismiss": "关闭",
 			"decision.dismiss-row": "移除行",
 			"decision.checkpoint-request": "检查点",
@@ -190,7 +197,7 @@ window.__ModuleLoader__.load({
 .rt-rowHasItems:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px}
 .rt-rowChevron{color:var(--dsw-alias-label-tertiary);flex:none;align-self:center;place-items:center;display:grid}
 .rt-itemCount{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px;font-variant-numeric:tabular-nums;flex:none}
-.rt-itemList{border-left:2px solid var(--dsw-alias-border-l1);margin:3px 0 1px 1px;padding-left:8px;flex-direction:column;gap:1px;display:flex}
+.rt-itemList{border-left:2px solid var(--dsw-alias-border-l1);margin:3px 0 1px 1px;padding-left:8px;flex-direction:column;gap:1px;display:flex;max-height:220px;overflow-y:auto;scrollbar-width:thin;mask-image:linear-gradient(to bottom,#000 calc(100% - 14px),transparent)}
 .rt-item{align-items:flex-start;gap:7px;min-width:0;display:flex}
 .rt-itemGlyph{color:inherit;flex:none;place-items:center;width:14px;height:14px;margin-top:1px;display:grid}
 .rt-itemDone{color:var(--dsw-alias-label-caption)}
@@ -439,6 +446,10 @@ window.__ModuleLoader__.load({
 			const [delivered, setDelivered] = (0, react.useState)(null);
 			const [expanded, setExpanded] = (0, react.useState)(false);
 			const [now, setNow] = (0, react.useState)(Date.now());
+			const present = view !== null && view.present === true;
+			(0, react.useEffect)(() => {
+				if (present !== true) { setExpanded(false); setError(null); setDelivered(null); }
+			}, [present]);
 			(0, react.useEffect)(() => {
 				const timer = window.setInterval(() => setNow(Date.now()), 30_000);
 				return () => window.clearInterval(timer);
@@ -530,7 +541,7 @@ window.__ModuleLoader__.load({
 							children: view.rows.map((row) => (0, react_jsx_runtime.jsx)(BoardRow, { row, busy: busy !== null, onAction: act, t }, row.id))
 						}) : null,
 						expanded && view.lastCheckpoint !== undefined ? (0, react_jsx_runtime.jsx)(CheckpointStrip, { view, t }) : null,
-						expanded && (error !== null || delivered !== null) ? (0, react_jsx_runtime.jsx)("span", {
+						(error !== null || delivered !== null) ? (0, react_jsx_runtime.jsx)("span", {
 							className: cx("rt-status", error === null && "rt-statusOk", error !== null && "rt-statusError"),
 							role: error !== null ? "alert" : "status",
 							children: error !== null
@@ -543,7 +554,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region lib/tracks.js
-		/** Tracks sidebar view — pure DOM (React overlays don't resolve react-dom/client). */
+		/** Tracks sidebar view — pure DOM (chosen for overlay grammar parity with rich-context). */
 		const TRACKS_ENTRY = "data-dsh-rich-tracking-tracks";
 		const TRACKS_FAMILY = ["[data-dsh-taskboard-entry]", "[data-dsh-ssh-entry]", "[data-dsh-skill-explorer-entry]", "[data-dsh-generative-ideas-entry]", "[data-dsh-rich-context-entry]", `[${TRACKS_ENTRY}]`];
 		const TRACKS_ICON = `<svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="3.2" cy="3.2" r="1.7"/><circle cx="12.8" cy="12.8" r="1.7"/><path d="M4.4 4.4 L7.2 7.2"/><circle cx="8.6" cy="8.6" r="1.4"/><path d="M9.7 9.7 L11.7 11.7"/></svg>`;

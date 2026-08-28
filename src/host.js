@@ -27,6 +27,27 @@ const REMINDER_OUTPUT_TOKENS = 6_000
 const GIT_TIMEOUT_MS = 1_500
 const ACTION_LIMIT = 100_000
 
+/**
+ * A child session's OWN events start at its seed boundary: fork children are
+ * seeded with the parent's completed-turn log INCLUDING its tracking events,
+ * so folding from zero would hand the child the parent's board — reminders
+ * and the play-mode engage loop would fire inside delegated children, and the
+ * Tracks scanner would list 76 duplicate parent boards (measured on this
+ * deployment). The child's board is what the CHILD writes.
+ */
+function seedBoundary(session) {
+  const header = session?.header
+  const value = header?.seedLength
+  return Number.isSafeInteger(value) && value > 0 ? value : 0
+}
+
+/** The session's own (post-seed) events, as a bounded array. */
+function ownEvents(session) {
+  const events = Array.isArray(session?.events) ? session.events : []
+  const boundary = seedBoundary(session)
+  return boundary > 0 ? events.slice(boundary) : events
+}
+
 // ── Tracks view: every board, every workspace ────────────────────────────────
 /** Sessions root (same layout the GUI uses: --slug--/<sessionId>/session.jsonl.zstd). */
 const SESSIONS_ROOT = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'sessions')
@@ -58,6 +79,7 @@ async function scanSessionFile(file) {
   let state = null
   let cwd = null
   let title = null
+  let boundary = 0
   for (const line of text.split('\n')) {
     if (line === '' || line.length > 2_000_000) continue
     // Cheap pre-filter: only tracking/session/title lines matter; the log is
@@ -72,9 +94,12 @@ async function scanSessionFile(file) {
       const flat = typeof event.cwd === 'string' ? event.cwd : undefined
       const wrapped = typeof event.data?.cwd === 'string' ? event.data.cwd : undefined
       cwd = flat ?? wrapped ?? cwd
+      boundary = Number.isSafeInteger(event.seedLength) && event.seedLength > 0 ? event.seedLength : 0
     }
     else if (type === 'session/title') { if (typeof event.data?.title === 'string' && event.data.title !== '') title = event.data.title }
     else if (type === 'tracking/write' || type === 'tracking/checkpoint' || type === 'tracking/decision') {
+      // Seed boundary: inherited (pre-boundary) tracking events are the PARENT's board.
+      if (Number.isSafeInteger(event.seq) && event.seq < boundary) continue
       // Poison-pill guard (review P2): one malformed tracking event must 500 the
       // route forever — wrap the fold so the file caches as boardless instead.
       try { state = foldTracking(state, event) } catch { state = state ?? null }
@@ -350,8 +375,10 @@ function trackingWriteTool() {
       const session = exec.agent.session
       const cwd = session.header?.cwd
       const gitState = await probeGitLight(cwd)
-      const revision = nextRevision(session.events)
-      const lastCheckpoint = lastTrackingEvent(session.events, 'tracking/checkpoint')?.data ?? null
+      // Revision is minted AFTER the await, immediately before the append, so
+      // parallel tool calls cannot mint duplicate revisions (review P3).
+      const revision = nextRevision(ownEvents(session))
+      const lastCheckpoint = lastTrackingEvent(ownEvents(session), 'tracking/checkpoint')?.data ?? null
       const ahead = await commitsAheadOf(lastCheckpoint, gitState?.head ?? null, cwd)
       // ignorable marks the custom type for the cold loader (out-of-repo
       // vocabulary); live consumers still fold it through session/event.
@@ -425,10 +452,10 @@ function trackingCheckpointTool() {
       const session = exec.agent.session
       const label = typeof args.label === 'string' && args.label.trim() !== '' ? args.label.trim().slice(0, 60) : null
       const gitState = await probeGitFull(session.header?.cwd)
-      const rows = lastTrackingEvent(session.events, 'tracking/write')?.data.rows ?? []
-      const prior = lastTrackingEvent(session.events, 'tracking/checkpoint')?.data ?? null
+      const rows = lastTrackingEvent(ownEvents(session), 'tracking/write')?.data.rows ?? []
+      const prior = lastTrackingEvent(ownEvents(session), 'tracking/checkpoint')?.data ?? null
       const commitsSincePrior = await commitsAheadOf(prior, gitState?.head ?? null, session.header?.cwd)
-      const id = nextCheckpointId(session.events)
+      const id = nextCheckpointId(ownEvents(session))
       session.append('tracking/checkpoint', { id, label, git: gitState, rows, commitsSincePrior, at: Date.now() }, { ignorable: true })
       return { id, label, git: gitState, boardPercent: overallPercentOf(rows), rows: rows.length }
     },
@@ -439,12 +466,12 @@ function trackingCheckpointTool() {
 /** Instruction texts (design §8.3, exact copy). */
 function instructionFor(kind, view, rowId) {
   if (kind === 'pursue') {
-    const row = view?.rows.find((entry) => entry.id === rowId) ?? view?.rows[0]
+    const row = view?.rows.find((entry) => entry.id === rowId)
     if (row === undefined) return null
     return `[rich-tracking | pursue] The operator pressed PURSUE on tracking row "${row.label}" (${row.percent}%, ${row.status}). Make this row the focus of your next work: if it never started, start it now; if it stalled or the session was interrupted, resume it. Read the row's evidence artifacts for the remaining acceptance items, set your todo_write list to those concrete steps, and call tracking_write with refreshed percents after material progress or a verified blocker.`
   }
   if (kind === 'delegate') {
-    const row = view?.rows.find((entry) => entry.id === rowId) ?? view?.rows[0]
+    const row = view?.rows.find((entry) => entry.id === rowId)
     if (row === undefined) return null
     const items = Array.isArray(row.items) && row.items.length > 0
       ? ` Its item checklist: ${row.items.map((item) => `${item.done === true ? '[x]' : '[ ]'} ${item.label}`).join('; ')}.`
@@ -462,7 +489,7 @@ function instructionFor(kind, view, rowId) {
   if (kind === 'dismiss-row') {
     const row = view?.rows.find((entry) => entry.id === rowId)
     if (row === undefined) return null
-    return `[rich-tracking | dismiss] The operator dismissed row "${row.label}" from the tracking board. Omit it from your next tracking_write unless its owning artifact re-opens it.`
+    return `[rich-tracking | dismiss] The operator dismissed row "${row.label}" (id "${row.id}") from the tracking board. Omit that row id from your next tracking_write unless its owning artifact re-opens it.`
   }
   if (kind === 'dismiss') {
     return '[rich-tracking | dismiss] The operator dismissed the tracking board. Stop updating it; do not call tracking_write unless the operator asks to re-open tracking.'
@@ -518,7 +545,7 @@ function installRefreshReminder(ctx) {
       // First touch folds the FULL log: constructor seeds (resume/fork) never
       // fire session/event, so incremental-only would miss pre-existing boards.
       let state = null
-      for (const event of session.events) state = foldTracking(state, event)
+      for (const event of ownEvents(session)) state = foldTracking(state, event)
       entry = { state, steps: 0, outputTokens: 0, remindedThisTurn: false, injectedThisTurn: false }
       runtime.set(session, entry)
     }
@@ -549,13 +576,19 @@ function installRefreshReminder(ctx) {
 
   // PLAY MODE: on turn/end, if playMode is active and there's pending work,
   // auto-engage the agent with the highest-value lowest-effort next step.
+  // Engage fires ONLY on naturally completed turns — an operator Stop
+  // (aborted) must not be undone 1.5s later, and refusal/max-tokens turns
+  // must not re-engage into loops (review P1).
+  const engageTimers = new Map()
   ctx.on('session/event', (session, event) => {
     if (event.type !== 'turn/end') return
+    if (event?.data?.reason?.kind !== 'completed') return
     const agent = ctx.agents.get(session.id)
     if (agent === undefined) return
-    // Read the board from the session's event log
+    // Read the board from the session's OWN (post-seed) event log — children
+    // never engage a parent's inherited board.
     let state = null
-    for (const e of session.events) state = foldTracking(state, e)
+    for (const e of ownEvents(session)) state = foldTracking(state, e)
     const view = boardView(state)
     if (view === null || view.present !== true) return
     if (view.playMode !== true) return
@@ -572,13 +605,23 @@ function installRefreshReminder(ctx) {
       'followup',
       'play-mode engage',
     )
-    // Small delay so the turn fully settles before the followup opens the next one
-    setTimeout(() => {
+    // Dedupe queued engages per session; at fire, re-fold and re-check — a
+    // pause/dismiss inside the window must win — and deliver only if the
+    // agent is still idle (never steer the operator's fresh turn).
+    const prior = engageTimers.get(session.id)
+    if (prior !== undefined) clearTimeout(prior)
+    const timer = setTimeout(() => {
+      engageTimers.delete(session.id)
       try {
-        if (agent.status === 'idle') agent.followup(message)
-        else agent.steer(message)
+        let fireState = null
+        for (const e of ownEvents(agent.session)) fireState = foldTracking(fireState, e)
+        const fireView = boardView(fireState)
+        if (fireView === null || fireView.present !== true || fireView.playMode !== true || fireView.allDone === true) return
+        if (agent.status !== 'idle') return
+        agent.followup(message)
       } catch { /* agent may have been disposed */ }
     }, 1500)
+    engageTimers.set(session.id, timer)
   })
 
   ctx.on('agent/pre-step', ({ agent, messages }, next) => {
@@ -594,6 +637,7 @@ function installRefreshReminder(ctx) {
       // Staleness backstop (design §10): one reminder per turn.
       if (entry.remindedThisTurn === false && (entry.steps >= REMINDER_STEPS || entry.outputTokens >= REMINDER_OUTPUT_TOKENS)) {
         entry.remindedThisTurn = true
+        entry.injectedThisTurn = true
         const rows = view.rows.map((row) => `${row.label} ${row.percent}%`).join('; ')
         const message = createPluginMessage(
           `<tracking-refresh> The tracking board (revision r${view.revision}) is stale: ${entry.steps} assistant steps and ~${entry.outputTokens} output tokens since the last tracking_write. Current rows: ${rows}. Re-derive percents from artifact truth (the row evidence fields name the owners: plan snapshots, receipts, acceptance boxes) and call tracking_write with the corrected board. Keep a row's percent unchanged when its truth did not change. Do not mention this reminder to the user.`,
@@ -663,7 +707,7 @@ export function apply(ctx) {
       input: { hint: '[message]' },
       handler: ({ agent, rawInput }) => {
         let state = null
-        for (const event of agent.session.events) state = foldTracking(state, event)
+        for (const event of ownEvents(agent.session)) state = foldTracking(state, event)
         const view = boardView(state)
         const message = rawInput.trim()
         const text = `${message !== '' ? `${message}\n\n` : ''}<tracking-sync>\n${ledgerContext(view)}`
@@ -718,7 +762,7 @@ export function apply(ctx) {
 
         // Fold the current board for instruction templating.
         let state = null
-        for (const event of agent.session.events) state = foldTracking(state, event)
+        for (const event of ownEvents(agent.session)) state = foldTracking(state, event)
         const view = boardView(state)
 
         const instruction = instructionFor(body.kind, view, body.rowId)
