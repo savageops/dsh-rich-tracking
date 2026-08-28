@@ -44,6 +44,8 @@ window.__ModuleLoader__.load({
 		const NS = "rich-tracking";
 		const en = {
 			"title": "Tracking",
+			"stub.empty": "no board — tracking_write opens one",
+			"stub.dismissed": "board dismissed — a new write re-opens it",
 			"board.done": "done",
 			"rows": "rows",
 			"row.basis": "basis:",
@@ -106,6 +108,8 @@ window.__ModuleLoader__.load({
 		};
 		const zh = {
 			"title": "进度",
+			"stub.empty": "暂无看板——tracking_write 即开启",
+			"stub.dismissed": "看板已收起——新的写入会重新打开",
 			"board.done": "完成",
 			"rows": "行",
 			"row.basis": "依据：",
@@ -168,7 +172,10 @@ window.__ModuleLoader__.load({
 		};
 		//#endregion
 		//#region lib/styles.css
-		const css = `.rt-root{box-sizing:border-box;width:calc(100% - var(--dsh-composer-side-clearance) - var(--dsh-composer-side-clearance) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));max-width:calc(var(--dsh-composer-card-max-width) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-specific-tip);border-radius:12px;flex:none;margin:0 auto;overflow:hidden}
+		const css = `.rt-rootStub{opacity:.55}
+.rt-discStub{--rt-percent:0deg;--rt-fill-color:var(--dsw-alias-border-l2)}
+.rt-rootStub:hover{opacity:.85}
+.rt-root{box-sizing:border-box;width:calc(100% - var(--dsh-composer-side-clearance) - var(--dsh-composer-side-clearance) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));max-width:calc(var(--dsh-composer-card-max-width) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-specific-tip);border-radius:12px;flex:none;margin:0 auto;overflow:hidden}
 .rt-list{scrollbar-width:none}
 .rt-list::-webkit-scrollbar{display:none;width:0;height:0}
 .rt-root,.rt-root *{box-sizing:border-box}
@@ -441,7 +448,7 @@ window.__ModuleLoader__.load({
 		/**
 		 * The scoreboard dock entry (order 5): renders the host-computed
 		 * 'tracking' projection. Absent or dismissed board renders nothing —
-		 * the plugin is inert until the first tracking_write.
+		 * a persistent dimmed stub renders until the first tracking_write (never vanishes).
 		 */
 		function TrackingDock({ useProjection, sessionId, t }) {
 			const view = useProjection("tracking");
@@ -458,7 +465,23 @@ window.__ModuleLoader__.load({
 				const timer = window.setInterval(() => setNow(Date.now()), 30_000);
 				return () => window.clearInterval(timer);
 			}, []);
-			if (view === null || view === undefined || view.present !== true) return null;
+			// Persistent dock (operator directive 2026-08-28: "tracking ui keeps
+			// disappearing across the board, should be persistent like goals"):
+			// never unmount — absent and dismissed boards render a dimmed stub
+			// pill instead of vanishing, so the surface stays discoverable and
+			// state is always visible.
+			if (view === null || view === undefined || view.present !== true) {
+				const dismissed = view !== null && view !== undefined && view.present !== true;
+				return (0, react_jsx_runtime.jsxs)("div", {
+					className: "rt-root rt-rootStub",
+					"data-stub": dismissed ? "dismissed" : "empty",
+					children: [
+						(0, react_jsx_runtime.jsx)("span", { className: "rt-disc rt-discStub", "aria-hidden": "true" }),
+						(0, react_jsx_runtime.jsx)("span", { className: "rt-title", children: t("title") }),
+						(0, react_jsx_runtime.jsx)("span", { className: "rt-progress", children: dismissed ? t("stub.dismissed") : t("stub.empty") }),
+					],
+				});
+			}
 
 			const act = (kind, rowId) => {
 				setBusy(kind + (rowId ?? ""));
