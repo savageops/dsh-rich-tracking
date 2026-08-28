@@ -22,6 +22,8 @@ dsh plugin --profile web add dsh-rich-tracking
 
 Restart the `dsh web` process — `tracking_write` and `tracking_checkpoint` become available to every agent preset, and the board renders in the conversation dock (order 5: below the todo pill, above the goal bar).
 
+The current release requires DeepSeek Harness `>=0.1.2-alpha.1`. The host registers `tracking/write`, `tracking/checkpoint`, and `tracking/decision` through the core `ctx.sessionEventTypes` capability before the persistence reader interprets history. This keeps the tracking records durable and replayable while preserving the harness fail-closed behavior for event types with no active owner. The registration is owned by the plugin fiber, so unload or HMR removes the admission capability with the tracking interpreter.
+
 ## The grammar
 
 **todos are the micro plan (this turn); tracking is the mission scoreboard (across turns).** The board deliberately does not reset on `turn/start` — waves, milestones, and multi-session objectives survive until every row is 100 or you dismiss it.
@@ -82,10 +84,11 @@ The pill clones the built-in TodoPanel's exact grammar: **36px collapsed height*
 
 ```
 src/host.js            Node half — tracking_write + tracking_checkpoint tools, the
-                       'tracking' session projection (no turn reset), the agent/pre-step
-                       refresh reminder + per-turn board reminder, the /track command,
-                       the loopback-fenced /api/rich-tracking/action route (pursue/
-                       delegate/align/dismiss/checkpoint). Node builtins only.
+                       'tracking' session projection (no turn reset), required
+                       session-event registration, the agent/pre-step refresh reminder
+                       + per-turn board reminder, the /track command, the loopback-
+                       fenced /api/rich-tracking/action route (pursue/delegate/align/
+                       dismiss/checkpoint). Node builtins only.
 src/tracking-engine.js Pure engine — board validation (self-repairing messages, item
                        math), projection fold, wire view, percent math, ledger
                        rendering. Host-only. 16 node:test cases: npm test.
@@ -96,7 +99,7 @@ src/client.bundle.js   Browser half — the dock board: percent-disc pill, bleed
 cordis.patch.yml       Bundle patch inserting the plugin row.
 ```
 
-State is session events (`tracking/write`, `tracking/checkpoint`, `tracking/decision`) — persistence, reload, and fork ride the existing JSONL log; the client subscribes through the projection wire. Forks inherit the board and evolve independently.
+State is session events (`tracking/write`, `tracking/checkpoint`, `tracking/decision`) — persistence, reload, and fork ride the existing JSONL log; the client subscribes through the projection wire. The host registers those required external event types with the core session service while this plugin is active. Forks inherit the board and evolve independently.
 
 ## How updates flow
 
