@@ -44,7 +44,6 @@ window.__ModuleLoader__.load({
 		const NS = "rich-tracking";
 		const en = {
 			"title": "Tracking",
-			"stub.empty": "no board — tracking_write opens one",
 			"board.done": "done",
 			"rows": "rows",
 			"row.basis": "basis:",
@@ -107,7 +106,6 @@ window.__ModuleLoader__.load({
 		};
 		const zh = {
 			"title": "进度",
-			"stub.empty": "暂无看板——tracking_write 即开启",
 			"board.done": "完成",
 			"rows": "行",
 			"row.basis": "依据：",
@@ -170,10 +168,7 @@ window.__ModuleLoader__.load({
 		};
 		//#endregion
 		//#region lib/styles.css
-		const css = `.rt-rootStub{opacity:.55}
-.rt-discStub{--rt-percent:0deg;--rt-fill-color:var(--dsw-alias-border-l2)}
-.rt-rootStub:hover{opacity:.85}
-.rt-root{box-sizing:border-box;width:calc(100% - var(--dsh-composer-side-clearance) - var(--dsh-composer-side-clearance) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));max-width:calc(var(--dsh-composer-card-max-width) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-specific-tip);border-radius:12px;flex:none;margin:0 auto;overflow:hidden}
+		const css = `.rt-root{box-sizing:border-box;width:calc(100% - var(--dsh-composer-side-clearance) - var(--dsh-composer-side-clearance) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));max-width:calc(var(--dsh-composer-card-max-width) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-specific-tip);border-radius:12px;flex:none;margin:0 auto;overflow:hidden}
 .rt-list{scrollbar-width:none}
 .rt-list::-webkit-scrollbar{display:none;width:0;height:0}
 .rt-root,.rt-root *{box-sizing:border-box}
@@ -463,23 +458,10 @@ window.__ModuleLoader__.load({
 				const timer = window.setInterval(() => setNow(Date.now()), 30_000);
 				return () => window.clearInterval(timer);
 			}, []);
-			// Persistent dock (operator directive): a session with NO board yet
-			// renders a dimmed stub (discoverable surface); a DISMISSED board
-			// renders nothing — dismissal means gone. Boards with open rows
-			// cannot be dismissed at all (host-enforced), so a live board
-			// never vanishes while work remains.
-			if (view === null || view === undefined) {
-				return (0, react_jsx_runtime.jsxs)("div", {
-					className: "rt-root rt-rootStub",
-					"data-stub": "empty",
-					children: [
-						(0, react_jsx_runtime.jsx)("span", { className: "rt-disc rt-discStub", "aria-hidden": "true" }),
-						(0, react_jsx_runtime.jsx)("span", { className: "rt-title", children: t("title") }),
-						(0, react_jsx_runtime.jsx)("span", { className: "rt-progress", children: t("stub.empty") }),
-					],
-				});
-			}
-			if (view.present !== true) return null;
+			// No board in this session, or dismissed: render nothing (operator
+			// 2026-08-28 — the stub pill was unwanted). Live boards never vanish
+			// mid-work: whole-board dismiss is host-blocked while rows are open.
+			if (view === null || view === undefined || view.present !== true) return null;
 
 			const act = (kind, rowId) => {
 				setBusy(kind + (rowId ?? ""));
