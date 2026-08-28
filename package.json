@@ -1,6 +1,6 @@
 {
   "name": "dsh-rich-tracking",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Percent-progress scoreboard for DeepSeek Harness: the tracking_write/tracking_checkpoint tools plus a docked board below the todo pill — rows with live percents derived from artifact truth, checkpoints with host-captured git state, and pursue/align/dismiss operator actions that reach the agent as instructions.",
   "keywords": [
     "deepseek-harness",
@@ -44,7 +44,7 @@
   ],
   "dsh": {
     "engines": {
-      "dsh": ">=0.1.1-rc.2"
+      "dsh": ">=0.1.2-alpha.1"
     },
     "bundle": {
       "patch": "./cordis.patch.yml"
