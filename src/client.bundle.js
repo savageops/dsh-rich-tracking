@@ -560,7 +560,7 @@ window.__ModuleLoader__.load({
 		//#region lib/tracks.js
 		/** Tracks sidebar view — pure DOM (chosen for overlay grammar parity with rich-context). */
 		const TRACKS_ENTRY = "data-dsh-rich-tracking-tracks";
-		const TRACKS_FAMILY = ["[data-dsh-taskboard-entry]", "[data-dsh-ssh-entry]", "[data-dsh-skill-explorer-entry]", "[data-dsh-generative-ideas-entry]", "[data-dsh-rich-context-entry]", "[data-dsh-rich-tracking-tracks]", "[data-dsh-rich-sync-entry]"];
+		const TRACKS_FAMILY = ["[data-dsh-taskboard-entry]", "[data-dsh-ssh-entry]", "[data-dsh-skill-explorer-entry]", "[data-dsh-generative-ideas-entry]", "[data-dsh-rich-context-entry]", `[${TRACKS_ENTRY}]`];
 		const TRACKS_ICON = `<svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="3.2" cy="3.2" r="1.7"/><circle cx="12.8" cy="12.8" r="1.7"/><path d="M4.4 4.4 L7.2 7.2"/><circle cx="8.6" cy="8.6" r="1.4"/><path d="M9.7 9.7 L11.7 11.7"/></svg>`;
 		const TRACKS_CSS = `.trk2-entry{appearance:none;box-sizing:border-box;display:flex;align-items:center;gap:8px;width:100%;height:36px;padding:0 10px;font:inherit;font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary);background:0 0;border:none;border-radius:8px;cursor:pointer;text-align:left}
 .trk2-entry:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
