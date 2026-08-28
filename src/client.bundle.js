@@ -51,6 +51,8 @@ window.__ModuleLoader__.load({
 			"tracks.tooltip": "All tracking boards across workspaces — open, expand, start, and trigger work",
 			"tracks.title": "Tracks",
 			"tracks.scanning": "Scanning sessions…",
+			"tracks.loadFailed": "Failed to load tracks",
+			"tracks.staleHost": "host process predates Tracks — restart the dsh web service",
 			"tracks.refresh": "Refresh",
 			"tracks.close": "Close",
 			"tracks.boards": "board(s)",
@@ -111,6 +113,8 @@ window.__ModuleLoader__.load({
 			"tracks.tooltip": "所有工作区的追踪板——查看、展开、启动与触发",
 			"tracks.title": "追踪",
 			"tracks.scanning": "扫描会话中…",
+			"tracks.loadFailed": "加载追踪板失败",
+			"tracks.staleHost": "宿主进程早于 Tracks——请重启 dsh web 服务",
 			"tracks.refresh": "刷新",
 			"tracks.close": "关闭",
 			"tracks.boards": "块板",
@@ -556,7 +560,7 @@ window.__ModuleLoader__.load({
 		//#region lib/tracks.js
 		/** Tracks sidebar view — pure DOM (chosen for overlay grammar parity with rich-context). */
 		const TRACKS_ENTRY = "data-dsh-rich-tracking-tracks";
-		const TRACKS_FAMILY = ["[data-dsh-taskboard-entry]", "[data-dsh-ssh-entry]", "[data-dsh-skill-explorer-entry]", "[data-dsh-generative-ideas-entry]", "[data-dsh-rich-context-entry]", `[${TRACKS_ENTRY}]`];
+		const TRACKS_FAMILY = ["[data-dsh-taskboard-entry]", "[data-dsh-ssh-entry]", "[data-dsh-skill-explorer-entry]", "[data-dsh-generative-ideas-entry]", "[data-dsh-rich-context-entry]", "[data-dsh-rich-tracking-tracks]", "[data-dsh-rich-sync-entry]"];
 		const TRACKS_ICON = `<svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="3.2" cy="3.2" r="1.7"/><circle cx="12.8" cy="12.8" r="1.7"/><path d="M4.4 4.4 L7.2 7.2"/><circle cx="8.6" cy="8.6" r="1.4"/><path d="M9.7 9.7 L11.7 11.7"/></svg>`;
 		const TRACKS_CSS = `.trk2-entry{appearance:none;box-sizing:border-box;display:flex;align-items:center;gap:8px;width:100%;height:36px;padding:0 10px;font:inherit;font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary);background:0 0;border:none;border-radius:8px;cursor:pointer;text-align:left}
 .trk2-entry:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
@@ -606,7 +610,16 @@ window.__ModuleLoader__.load({
 
 		async function fetchTracks() {
 			const res = await fetch(`${API}/tracks`, { cache: "no-store" });
-			return res.json();
+			const body = await res.text().catch(() => "");
+			let parsed = null;
+			try { parsed = body === "" ? null : JSON.parse(body) } catch { parsed = null }
+			if (parsed === null || parsed.ok !== true) {
+				// Non-JSON bodies (e.g. a stale host's plain-text 404) surface the
+				// status instead of a JSON parse explosion.
+				const detail = parsed !== null && typeof parsed.error === "string" ? parsed.error : `HTTP ${res.status}`;
+				throw new Error(res.status === 404 ? `${tt("tracks.staleHost")} (${detail})` : detail);
+			}
+			return parsed;
 		}
 
 		function tracksSidebarRoot() {
@@ -854,9 +867,8 @@ window.__ModuleLoader__.load({
 			const load = () => {
 				hint.textContent = tt("tracks.scanning");
 				fetchTracks().then((data) => {
-					if (data.ok !== true) throw new Error(data.error);
 					render(data);
-				}).catch((cause) => { hint.textContent = `${tt("error.generic")}: ${cause.message}`; });
+				}).catch((cause) => { hint.textContent = `${tt("tracks.loadFailed")}: ${cause.message}`; });
 			};
 			load();
 			return scrim;
