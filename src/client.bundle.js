@@ -45,7 +45,6 @@ window.__ModuleLoader__.load({
 		const en = {
 			"title": "Tracking",
 			"stub.empty": "no board — tracking_write opens one",
-			"stub.dismissed": "board dismissed — a new write re-opens it",
 			"board.done": "done",
 			"rows": "rows",
 			"row.basis": "basis:",
@@ -109,7 +108,6 @@ window.__ModuleLoader__.load({
 		const zh = {
 			"title": "进度",
 			"stub.empty": "暂无看板——tracking_write 即开启",
-			"stub.dismissed": "看板已收起——新的写入会重新打开",
 			"board.done": "完成",
 			"rows": "行",
 			"row.basis": "依据：",
@@ -465,23 +463,23 @@ window.__ModuleLoader__.load({
 				const timer = window.setInterval(() => setNow(Date.now()), 30_000);
 				return () => window.clearInterval(timer);
 			}, []);
-			// Persistent dock (operator directive 2026-08-28: "tracking ui keeps
-			// disappearing across the board, should be persistent like goals"):
-			// never unmount — absent and dismissed boards render a dimmed stub
-			// pill instead of vanishing, so the surface stays discoverable and
-			// state is always visible.
-			if (view === null || view === undefined || view.present !== true) {
-				const dismissed = view !== null && view !== undefined && view.present !== true;
+			// Persistent dock (operator directive): a session with NO board yet
+			// renders a dimmed stub (discoverable surface); a DISMISSED board
+			// renders nothing — dismissal means gone. Boards with open rows
+			// cannot be dismissed at all (host-enforced), so a live board
+			// never vanishes while work remains.
+			if (view === null || view === undefined) {
 				return (0, react_jsx_runtime.jsxs)("div", {
 					className: "rt-root rt-rootStub",
-					"data-stub": dismissed ? "dismissed" : "empty",
+					"data-stub": "empty",
 					children: [
 						(0, react_jsx_runtime.jsx)("span", { className: "rt-disc rt-discStub", "aria-hidden": "true" }),
 						(0, react_jsx_runtime.jsx)("span", { className: "rt-title", children: t("title") }),
-						(0, react_jsx_runtime.jsx)("span", { className: "rt-progress", children: dismissed ? t("stub.dismissed") : t("stub.empty") }),
+						(0, react_jsx_runtime.jsx)("span", { className: "rt-progress", children: t("stub.empty") }),
 					],
 				});
 			}
+			if (view.present !== true) return null;
 
 			const act = (kind, rowId) => {
 				setBusy(kind + (rowId ?? ""));
@@ -548,13 +546,13 @@ window.__ModuleLoader__.load({
 											onClick: () => act("checkpoint-request"),
 											children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCheckOutline16, {})
 										}),
-										(0, react_jsx_runtime.jsx)(ActionButton, {
+										view.allDone === true ? (0, react_jsx_runtime.jsx)(ActionButton, {
 											label: t("action.dismiss"),
 											hint: t("action.dismiss.hint"),
 											disabled: busy !== null,
 											onClick: () => act("dismiss"),
 											children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTrashOutline16, {})
-										}),
+										}) : null,
 										(0, react_jsx_runtime.jsx)("span", { className: "rt-chevron", "aria-hidden": "true", children: expanded ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, {}) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronUpOutline14, {}) })
 									]
 								})
@@ -878,7 +876,7 @@ window.__ModuleLoader__.load({
 				addButton(board.playMode === true ? tt("tracks.pause") : tt("tracks.play"), board.playMode === true ? "pause" : "play");
 				addButton(tt("action.checkpoint"), "checkpoint-request");
 				addButton(tt("action.align"), "align");
-				addButton(tt("action.dismiss"), "dismiss");
+				if (board.allDone === true) addButton(tt("action.dismiss"), "dismiss");
 				for (const row of board.rows) {
 					addButton(`\u2197 ${row.label.slice(0, 24)}${row.label.length > 24 ? "\u2026" : ""}`, "pursue", row.id);
 				}

@@ -765,6 +765,13 @@ export function apply(ctx) {
         for (const event of ownEvents(agent.session)) state = foldTracking(state, event)
         const view = boardView(state)
 
+        // Operator rule 2026-08-28: a board with open rows cannot be dismissed —
+        // tracks that are not 100% must never disappear. Whole-board dismiss is
+        // only valid once every row is done (row-level dismiss stays available).
+        if (body.kind === 'dismiss' && Array.isArray(view?.rows) && view.rows.some((row) => row.percent < 100)) {
+          writeJson(res, 400, { ok: false, error: 'board-dismiss-blocked: open rows remain — finish them or dismiss rows individually' })
+          return
+        }
         const instruction = instructionFor(body.kind, view, body.rowId)
         if (instruction === null) { writeJson(res, 400, { ok: false, error: 'row-not-found' }); return }
 
