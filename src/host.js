@@ -197,16 +197,7 @@ async function scanTracks(ctx, budgetMs = TRACKS_BUDGET_MS) {
 }
 
 export const name = 'dsh-rich-tracking'
-export const inject = ['tools', 'webServer', 'agents', 'systemPrompt', 'sessionEventTypes']
-
-// These records shape the tracking projection and are required for faithful
-// history reads. The core persistence guard admits them only while this plugin
-// is active and owns the registration.
-const TRACKING_EVENT_TYPES = Object.freeze([
-  'tracking/write',
-  'tracking/checkpoint',
-  'tracking/decision',
-])
+export const inject = ['tools', 'webServer', 'agents', 'systemPrompt']
 
 /**
  * Percent-honesty doctrine (design §11): the board is a commitment device —
@@ -389,7 +380,9 @@ function trackingWriteTool() {
       const revision = nextRevision(ownEvents(session))
       const lastCheckpoint = lastTrackingEvent(ownEvents(session), 'tracking/checkpoint')?.data ?? null
       const ahead = await commitsAheadOf(lastCheckpoint, gitState?.head ?? null, cwd)
-      session.append('tracking/write', { revision, rows: check.board.rows, note: check.board.note, git: gitState, commitsAhead: ahead, at: Date.now() })
+      // ignorable marks the custom type for the cold loader (out-of-repo
+      // vocabulary); live consumers still fold it through session/event.
+      session.append('tracking/write', { revision, rows: check.board.rows, note: check.board.note, git: gitState, commitsAhead: ahead, at: Date.now() }, { ignorable: true })
       return {
         rows: check.board.rows,
         overallPercent: overallPercentOf(check.board.rows),
@@ -463,7 +456,7 @@ function trackingCheckpointTool() {
       const prior = lastTrackingEvent(ownEvents(session), 'tracking/checkpoint')?.data ?? null
       const commitsSincePrior = await commitsAheadOf(prior, gitState?.head ?? null, session.header?.cwd)
       const id = nextCheckpointId(ownEvents(session))
-      session.append('tracking/checkpoint', { id, label, git: gitState, rows, commitsSincePrior, at: Date.now() })
+      session.append('tracking/checkpoint', { id, label, git: gitState, rows, commitsSincePrior, at: Date.now() }, { ignorable: true })
       return { id, label, git: gitState, boardPercent: overallPercentOf(rows), rows: rows.length }
     },
     presentCall: (args) => ({ card: 'generic', title: 'Take tracking checkpoint', kind: 'other', rawInput: args.label ?? '' }),
@@ -684,16 +677,6 @@ function assemblyCarriesTracking(messages) {
 }
 
 export function apply(ctx) {
-  // Register before any history consumer can ask persistence to interpret a
-  // stored tracking event. The injection fiber owns the disposer, so plugin
-  // unload and HMR close the compatibility window with the projection code.
-  ctx.inject(['sessionEventTypes'], (eventTypesCtx) => {
-    eventTypesCtx.effect(
-      () => eventTypesCtx.sessionEventTypes.register(TRACKING_EVENT_TYPES, name),
-      'rich-tracking: session event types',
-    )
-  })
-
   // Projection (deferred, the todo tool's pattern). viewSchema is consumed as
   // `.parse()` — a zero-dep identity schema satisfies the wire contract.
   ctx.inject(['sessionProjections'], (projectionCtx) => {
@@ -792,7 +775,7 @@ export function apply(ctx) {
         const instruction = instructionFor(body.kind, view, body.rowId)
         if (instruction === null) { writeJson(res, 400, { ok: false, error: 'row-not-found' }); return }
 
-        agent.session.append('tracking/decision', { kind: body.kind, rowId: body.rowId ?? null, instruction, at: Date.now() })
+        agent.session.append('tracking/decision', { kind: body.kind, rowId: body.rowId ?? null, instruction, at: Date.now() }, { ignorable: true })
 
         const whip = body.kind === 'pursue' || body.kind === 'delegate' || body.kind === 'align' || body.kind === 'checkpoint-request' || body.kind === 'play' || body.kind === 'pause'
         if (whip === true) {
