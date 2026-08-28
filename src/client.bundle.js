@@ -486,7 +486,7 @@ window.__ModuleLoader__.load({
 				setError(null);
 				setDelivered(null);
 				postAction(sessionId, kind, rowId).then((body) => {
-					setDelivered(body.delivered);
+					setDelivered({ kind, delivered: body.delivered, at: Date.now() });
 					setBusy(null);
 				}).catch((cause) => {
 					setError(cause instanceof Error ? cause.message : String(cause));
@@ -498,9 +498,15 @@ window.__ModuleLoader__.load({
 			const counter = view.allDone === true
 				? `${view.doneCount}/${view.rows.length} ${t("rows")} \u00b7 ${t("board.done")}`
 				: `${view.doneCount}/${view.rows.length} ${t("rows")} \u00b7 ${view.overallPercent}%`;
-			const decisionChip = view.lastDecision !== undefined && now - view.lastDecision.at < 10 * 60_000
-				? `${t(`decision.${view.lastDecision.kind}`)} \u00b7 ${relativeMinutes(view.lastDecision.at, now)} ${t("ago")}`
+			// Delivery feedback lives IN the badge (operator: the rt-status line
+			// below the board is "not a great place") — "pursue · delivered quietly · now ago".
+			const deliveredChip = delivered !== null && now - delivered.at < 10 * 60_000
+				? `${t(`decision.${delivered.kind}`)} \u00b7 ${t(`status.${delivered.delivered}`)} \u00b7 ${relativeMinutes(delivered.at, now)} ${t("ago")}`
 				: null;
+			const decisionChip = deliveredChip !== null ? deliveredChip
+				: view.lastDecision !== undefined && now - view.lastDecision.at < 10 * 60_000
+					? `${t(`decision.${view.lastDecision.kind}`)} \u00b7 ${relativeMinutes(view.lastDecision.at, now)} ${t("ago")}`
+					: null;
 
 			return (0, react_jsx_runtime.jsx)("div", {
 				className: "rt-root",
@@ -566,12 +572,10 @@ window.__ModuleLoader__.load({
 							children: view.rows.map((row) => (0, react_jsx_runtime.jsx)(BoardRow, { row, busy: busy !== null, onAction: act, t }, row.id))
 						}) : null,
 						expanded && view.lastCheckpoint !== undefined ? (0, react_jsx_runtime.jsx)(CheckpointStrip, { view, t }) : null,
-						(error !== null || delivered !== null) ? (0, react_jsx_runtime.jsx)("span", {
-							className: cx("rt-status", error === null && "rt-statusOk", error !== null && "rt-statusError"),
-							role: error !== null ? "alert" : "status",
-							children: error !== null
-								? (error === "session-offline" ? t("error.offline") : `${t("error.generic")}: ${error}`)
-								: `${t("status.delivered")} \u2014 ${t(`status.${delivered}`)}`
+						error !== null ? (0, react_jsx_runtime.jsx)("span", {
+							className: "rt-status rt-statusError",
+							role: "alert",
+							children: error === "session-offline" ? t("error.offline") : `${t("error.generic")}: ${error}`
 						}) : null
 					]
 				})
