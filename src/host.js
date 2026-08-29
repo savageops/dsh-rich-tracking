@@ -63,18 +63,85 @@ const TRACKS_MAX_COMPRESSED_BYTES = 48 * 1024 * 1024
 const tracksInFlight = new Map()
 const ZSTD_MAX_BUFFER = 192 * 1024 * 1024
 
-const execZstd = (file) => new Promise((resolve) => {
-  execFile('zstd', ['-dc', file], { timeout: 4_000, maxBuffer: ZSTD_MAX_BUFFER }, (error, stdout) => {
-    resolve(error !== null ? null : stdout)
+/**
+ * Decompression chain for reading stored session logs (.jsonl.zstd). The
+ * zstd CLI is the first choice, but this deployment (Windows) ships WITHOUT
+ * it — every scan silently resolved null and cached every session as
+ * boardless, which looked exactly like "active boards disappearing from the
+ * UI" (proven: /tracks returned 0 boards while the log on disk carried 10
+ * tracking events). The chain therefore falls through to python's
+ * zstandard, caches the first method that works, and logs the fallback ONCE
+ * so a fully-blind scanner is visible in the server log instead of silent.
+ */
+const ZSTD_PYTHON_SNIPPET = 'import sys,zstandard;d=zstandard.ZstdDecompressor();i=open(sys.argv[1],"rb");o=getattr(sys.stdout,"buffer",sys.stdout);d.copy_stream(i,o)'
+let zstdMethod = null // null = not probed; 'zstd' | 'python' | 'none'
+function execVia(method, file) {
+  return new Promise((resolve) => {
+    const spec = method === 'zstd'
+      ? ['zstd', ['-dc', file]]
+      : ['python', ['-c', ZSTD_PYTHON_SNIPPET, file]]
+    execFile(spec[0], spec[1], { timeout: 8_000, maxBuffer: ZSTD_MAX_BUFFER, encoding: 'buffer' }, (error, stdout) => {
+      resolve(error !== null || stdout.length === 0 ? null : stdout)
+    })
   })
-})
+}
+async function decompressLog(file) {
+  if (zstdMethod === 'none') return null
+  const order = zstdMethod === null ? ['zstd', 'python'] : [zstdMethod]
+  for (const method of order) {
+    const out = await execVia(method, file)
+    if (out !== null) {
+      if (zstdMethod === null) {
+        zstdMethod = method
+        if (method !== 'zstd') console.warn(`[dsh-rich-tracking] zstd CLI unavailable — using python zstandard for log scans`)
+      }
+      return out.toString('utf8')
+    }
+  }
+  if (zstdMethod === null) {
+    zstdMethod = 'none'
+    console.warn('[dsh-rich-tracking] NO decompressor available (zstd CLI and python zstandard both failed) — Tracks/board scans return nothing')
+  }
+  return null
+}
 
 /**
  * Fold one session log into a Tracks summary. Returns null when the session
  * never wrote a board (the overwhelming majority) — those cache as null too.
  */
 async function scanSessionFile(file) {
-  const text = await execZstd(file)
+  const folded = await foldSessionFile(file)
+  if (folded === null) return null
+  const { state, cwd, title } = folded
+  let view = null
+  try { view = boardView(state) } catch { view = null }
+  if (view === null || view.present !== true) return null
+  return {
+    cwd,
+    title,
+    revision: view.revision,
+    overallPercent: view.overallPercent,
+    allDone: view.allDone === true,
+    playMode: view.playMode === true,
+    rows: view.rows.map((row) => ({
+      id: row.id,
+      label: row.label,
+      percent: row.percent,
+      status: row.status,
+      items: Array.isArray(row.items) ? { done: row.items.filter((item) => item.done === true).length, total: row.items.length } : null,
+    })),
+    lastWriteAt: view.updatedAt ?? null,
+  }
+}
+
+/**
+ * Fold one stored log into tracking state + session facts. Shared by the
+ * Tracks scan (all boards) and the /board endpoint (one session's full view
+ * — the dock's persistence fallback when the live projection reads absent).
+ * Returns null when the log cannot be decompressed.
+ */
+async function foldSessionFile(file) {
+  const text = await decompressLog(file)
   if (text === null) return null
   let state = null
   let cwd = null
@@ -105,25 +172,28 @@ async function scanSessionFile(file) {
       try { state = foldTracking(state, event) } catch { state = state ?? null }
     }
   }
-  let view = null
-  try { view = boardView(state) } catch { view = null }
-  if (view === null || view.present !== true) return null
-  return {
-    cwd,
-    title,
-    revision: view.revision,
-    overallPercent: view.overallPercent,
-    allDone: view.allDone === true,
-    playMode: view.playMode === true,
-    rows: view.rows.map((row) => ({
-      id: row.id,
-      label: row.label,
-      percent: row.percent,
-      status: row.status,
-      items: Array.isArray(row.items) ? { done: row.items.filter((item) => item.done === true).length, total: row.items.length } : null,
-    })),
-    lastWriteAt: view.updatedAt ?? null,
+  return { state, cwd, title }
+}
+
+/**
+ * Locate one session's stored log under SESSIONS_ROOT (layout:
+ * --slug--/<sessionId>/session.jsonl.zstd) and fold its tracking state.
+ * @returns the boardView (may be present:false), or null when no log exists.
+ */
+async function storedBoardFor(sessionId) {
+  if (typeof sessionId !== 'string' || sessionId === '') return null
+  let slugDirs = []
+  try { slugDirs = readdirSync(SESSIONS_ROOT) } catch { return null }
+  for (const slug of slugDirs) {
+    const file = join(SESSIONS_ROOT, slug, sessionId, 'session.jsonl.zstd')
+    try {
+      statSync(file)
+    } catch { continue }
+    const folded = await foldSessionFile(file)
+    if (folded === null) return null
+    try { return boardView(folded.state) } catch { return null }
   }
+  return null
 }
 
 /** All boards across all workspaces, newest activity first. */
@@ -806,7 +876,25 @@ export function apply(ctx) {
         writeJson(res, 200, { ok: true, delivered: 'inject' })
       },
     })
+    const disposeBoard = ctx.webServer.register({
+      kind: 'exact',
+      path: `${API_PREFIX}/board`,
+      handler: (req, res) => {
+        if (!guard(req, res)) return
+        if (req.method !== 'GET') { writeJson(res, 405, { ok: false, error: 'method-not-allowed' }); return }
+        // Persistence fallback for the dock: the live projection is the
+        // primary source, but restore paths can serve the key absent for a
+        // beat (or longer); the durable log is always truthful. The dock
+        // fetches this when its projection read comes back absent, so an
+        // active board never vanishes just because a projection face did.
+        const url = new URL(req.url ?? '/', 'http://dsh.invalid')
+        storedBoardFor(url.searchParams.get('sessionId') ?? '')
+          .then((view) => writeJson(res, 200, { ok: true, present: view?.present === true, ...(view?.present === true ? { view } : {}) }))
+          .catch(() => writeJson(res, 500, { ok: false, error: 'board-scan-failed' }))
+      },
+    })
     return () => {
+      disposeBoard()
       disposeAction()
       dispose()
     }

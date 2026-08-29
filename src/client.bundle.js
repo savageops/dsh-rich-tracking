@@ -440,17 +440,38 @@ window.__ModuleLoader__.load({
 		//#region lib/TrackingDock.js
 		/**
 		 * The scoreboard dock entry (order 5): renders the host-computed
-		 * 'tracking' projection. Absent or dismissed board renders nothing —
-		 * a persistent dimmed stub renders until the first tracking_write (never vanishes).
+		 * 'tracking' projection. Absent or dismissed board renders nothing
+		 * (operator 2026-08-28 — the stub pill was unwanted).
+		 * PERSISTENCE FALLBACK: the projection face can read the key absent
+		 * while the durable log still carries the board (session restore
+		 * serving absent checkpoints, plugin registration timing after a
+		 * restart). In that window the dock fetches /board (a log fold,
+		 * always truthful) and renders from it, so an active board never
+		 * vanishes just because a projection face did; the projection wins
+		 * the moment it returns.
 		 */
 		function TrackingDock({ useProjection, sessionId, t }) {
-			const view = useProjection("tracking");
+			const projected = useProjection("tracking");
 			const [busy, setBusy] = (0, react.useState)(null);
 			const [error, setError] = (0, react.useState)(null);
 			const [delivered, setDelivered] = (0, react.useState)(null);
 			const [expanded, setExpanded] = (0, react.useState)(false);
 			const [now, setNow] = (0, react.useState)(Date.now());
-			const present = view !== null && view.present === true;
+			const [fallbackView, setFallbackView] = (0, react.useState)(null);
+			const view = projected !== null && projected !== undefined && projected.present === true
+				? projected
+				: fallbackView;
+			(0, react.useEffect)(() => {
+				let cancelled = false;
+				setFallbackView(null);
+				if (sessionId === undefined) return () => { cancelled = true; };
+				fetch(`${API}/board?sessionId=${encodeURIComponent(sessionId)}`, { cache: "no-store" })
+					.then((res) => (res.ok ? res.json() : null))
+					.then((body) => { if (cancelled !== true && body?.ok === true && body.present === true) setFallbackView(body.view ?? null); })
+					.catch(() => { /* the projection remains the only source */ });
+				return () => { cancelled = true; };
+			}, [sessionId]);
+			const present = view !== null && view !== undefined && view.present === true;
 			(0, react.useEffect)(() => {
 				if (present !== true) { setExpanded(false); setError(null); setDelivered(null); }
 			}, [present]);
