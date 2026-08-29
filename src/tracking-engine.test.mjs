@@ -4,7 +4,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { boardView, foldTracking, ledgerContext, nextCheckpointId, nextRevision, overallPercentOf, validateBoard } from './tracking-engine.js'
+import { boardView, foldTracking, ledgerContext, nextCheckpointId, nextRevision, overallPercentOf, researchContext, validateBoard } from './tracking-engine.js'
 
 const validRow = (over = {}) => ({ id: 'w2-fleet', label: 'W2 fleet rebuild', percent: 55, evidence: '.docs/GOAL.md W2 + qc: 6/11', ...over })
 
@@ -215,4 +215,81 @@ test('play mode stops naturally at allDone', () => {
   const view = boardView(state)
   assert.equal(view.playMode, true)
   assert.equal(view.allDone, true, 'allDone boards end the engage loop host-side')
+})
+
+// ── v0.4: long-context row records (detail + sources) ───────────────────────
+
+test('detail + sources: valid long-context row passes through to the clean board and wire', () => {
+  const detail = 'Done: engine schema landed. Remains: deploy + docs. Decision: plain-directory profile deploy.'
+  const check = validateBoard({ rows: [validRow({ detail, sources: ['https://example.com/competitor-a', '.docs/digest/scout.md'] })] })
+  assert.equal(check.ok, true)
+  assert.equal(check.board.rows[0].detail, detail)
+  assert.deepEqual(check.board.rows[0].sources, ['https://example.com/competitor-a', '.docs/digest/scout.md'])
+  let state = null
+  state = foldTracking(state, { type: 'tracking/write', data: { revision: 1, rows: check.board.rows, note: null, git: null, commitsAhead: null, at: 1 } })
+  const view = boardView(state)
+  assert.equal(view.rows[0].detail, detail, 'detail rides the wire view to the dialog')
+  assert.equal(view.rows[0].sources.length, 2)
+})
+
+test('detail + sources: shape rules — caps, non-empty entries, empty strings dropped', () => {
+  assert.equal(validateBoard({ rows: [validRow({ detail: 'x'.repeat(4001) })] }).ok, false)
+  assert.match(validateBoard({ rows: [validRow({ detail: 'x'.repeat(4001) })] }).errors[0], /rows\[0\]\.detail must be a string <= 4000/)
+  assert.equal(validateBoard({ rows: [validRow({ sources: [] })] }).ok, false)
+  assert.equal(validateBoard({ rows: [validRow({ sources: Array.from({ length: 13 }, () => 's') })] }).ok, false)
+  assert.equal(validateBoard({ rows: [validRow({ sources: ['https://a', '   '] })] }).ok, false)
+  assert.equal(validateBoard({ rows: [validRow({ sources: ['x'.repeat(301)] })] }).ok, false)
+  const dropped = validateBoard({ rows: [validRow({ detail: '' })] })
+  assert.equal(dropped.ok, true)
+  assert.equal(dropped.board.rows[0].detail, undefined, 'empty detail drops like note/evidence')
+})
+
+test('items percent cross-check still enforced when detail/sources ride along', () => {
+  const check = validateBoard({ rows: [validRow({ percent: 80, evidence: 'x: 4/5', detail: 'ctx', sources: ['s'], items: [{ label: 'a', done: true }] })] })
+  assert.equal(check.ok, false)
+  assert.match(check.errors[0], /items say 1\/1 = 100/)
+})
+
+test('ledgerContext: detail and sources appear as bounded presence markers', () => {
+  let state = null
+  state = foldTracking(state, { type: 'tracking/write', data: { revision: 1, rows: [validRow({ detail: 'd'.repeat(1200), sources: ['a', 'b'] })], note: null, git: null, commitsAhead: null, at: 1 } })
+  const text = ledgerContext(boardView(state))
+  assert.match(text, /— detail: 1200 chars/)
+  assert.match(text, /— sources: 2/)
+  assert.doesNotMatch(text, /dddd/, 'the detail TEXT stays out of the injected ledger')
+})
+
+// ── v0.4: the scout brief (research fan-out) ────────────────────────────────
+
+test('researchContext: open-row roster, done rows excluded, scoped rowId, null when nothing to scout', () => {
+  assert.equal(researchContext(null), null)
+  let state = null
+  state = foldTracking(state, {
+    type: 'tracking/write',
+    data: {
+      revision: 3,
+      rows: [
+        validRow({ percent: 40, note: 'mid-flight' }),
+        validRow({ id: 'w9', label: 'W9 done', percent: 100, evidence: 'qc: 5/5' }),
+      ],
+      note: null, git: null, commitsAhead: null, at: 1,
+    },
+  })
+  const view = boardView(state)
+  const brief = researchContext(view)
+  assert.match(brief, /SCOUT FAN-OUT \(tracking board r3, 1 open row/)
+  assert.match(brief, /"W2 fleet rebuild" \(w2-fleet\): 40% active — basis: .* — note: mid-flight/)
+  assert.doesNotMatch(brief, /W9 done/, 'done rows are not scouted')
+  assert.match(brief, /3-6 competitors/)
+  assert.match(brief, /detail \(<= 4000 chars/)
+  assert.match(brief, /up to 12 links\/paths/)
+  assert.match(brief, /research is context, not progress/)
+  assert.equal(researchContext(view, 'w9'), null, 'a done row has nothing to scout')
+  const scoped = researchContext(view, 'w2-fleet')
+  assert.match(scoped, /this one row/)
+  assert.doesNotMatch(scoped, /W9 done/)
+  assert.equal(researchContext(view, 'missing-row'), null, 'an absent rowId scouts nothing')
+  let done = null
+  done = foldTracking(done, { type: 'tracking/write', data: { revision: 1, rows: [validRow({ percent: 100, evidence: 'x: 1/1' })], note: null, git: null, commitsAhead: null, at: 1 } })
+  assert.equal(researchContext(boardView(done)), null, 'an all-done board has nothing to scout')
 })

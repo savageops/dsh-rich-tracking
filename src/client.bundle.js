@@ -67,6 +67,18 @@ window.__ModuleLoader__.load({
 		"row.items": "items",
 		"row.expand": "show row items",
 		"row.collapse": "hide row items",
+		"row.record.open": "show full row record",
+		"row.record.close": "Close",
+		"row.record.hint": "Open this row's full record — context, acceptance items, sources — in a dialog.",
+		"record.title": "Row record",
+		"record.note": "Latest note",
+		"record.evidence": "Evidence basis",
+		"record.detail": "Detail",
+		"record.items": "Acceptance items",
+		"record.sources": "Sources",
+		"record.empty": "No detail yet — press Scout, or ask the agent to fill this row's context.",
+		"action.scout": "Scout",
+		"action.scout.hint": "Fan out research subagents — one per open row, each comparing 3-6 competitors — and fold the condensed knowledge back into the rows as detail and sources.",
 			"action.pursue": "Pursue",
 			"action.pursue.hint": "Make this row the agent's next focus — lands as an instruction in its next step.",
 		"action.delegate": "Delegate",
@@ -99,6 +111,7 @@ window.__ModuleLoader__.load({
 			"decision.play": "play",
 			"decision.pause": "pause",
 			"decision.delegate": "delegate",
+			"decision.scout": "scout",
 			"decision.dismiss": "dismiss",
 			"decision.dismiss-row": "dismiss row",
 			"decision.checkpoint-request": "checkpoint",
@@ -129,6 +142,18 @@ window.__ModuleLoader__.load({
 		"row.items": "项",
 		"row.expand": "展开行内条目",
 		"row.collapse": "收起行内条目",
+		"row.record.open": "查看行完整记录",
+		"row.record.close": "关闭",
+		"row.record.hint": "在对话框中打开该行的完整记录——上下文、验收条目、来源。",
+		"record.title": "行记录",
+		"record.note": "最新备注",
+		"record.evidence": "证据依据",
+		"record.detail": "详情",
+		"record.items": "验收条目",
+		"record.sources": "来源",
+		"record.empty": "还没有详情——按调研，或让 agent 填充该行的上下文。",
+		"action.scout": "调研",
+		"action.scout.hint": "派出调研子代理——每个未完成行一个，各对比 3-6 家竞品——把浓缩后的知识以详情与来源回填到行上。",
 			"action.pursue": "推进",
 			"action.pursue.hint": "让这一行成为 agent 的下一个工作重点——作为指令送达它的下一步。",
 		"action.delegate": "委派",
@@ -161,6 +186,7 @@ window.__ModuleLoader__.load({
 			"decision.play": "播放",
 			"decision.pause": "暂停",
 			"decision.delegate": "委托",
+			"decision.scout": "调研",
 			"decision.dismiss": "关闭",
 			"decision.dismiss-row": "移除行",
 			"decision.checkpoint-request": "检查点",
@@ -237,7 +263,25 @@ window.__ModuleLoader__.load({
 .rt-frozenRow + .rt-frozenRow{border-top:1px solid var(--dsw-alias-border-l1)}
 .rt-status{min-height:16px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;padding:0 12px}
 .rt-statusOk{color:var(--dsw-alias-state-success-primary)}
-.rt-statusError{color:var(--dsw-alias-state-error-primary)}`;
+.rt-statusError{color:var(--dsw-alias-state-error-primary)}
+.rt-scrim{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:24px}
+.rt-record{width:100%;max-width:720px;max-height:min(88vh,900px);border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-specific-tip);border-radius:12px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.rt-record,.rt-record *{box-sizing:border-box}
+.rt-recordHead{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--dsw-alias-border-l1)}
+.rt-recordTitle{flex:1;min-width:0;color:var(--dsw-alias-label-primary);font-size:14px;font-weight:500;line-height:20px;overflow-wrap:anywhere}
+.rt-recordPct{flex:none;color:var(--dsw-alias-state-business-primary);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.rt-recordClose{flex:none;width:28px;height:28px}
+.rt-recordBody{flex:1;min-height:0;overflow-y:auto;padding:10px 16px 14px;display:flex;flex-direction:column;gap:10px;scrollbar-width:thin}
+.rt-recordMeta{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:14px}
+.rt-recordSection{display:flex;flex-direction:column;gap:3px}
+.rt-recordLabel{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:14px;text-transform:uppercase;letter-spacing:.05em}
+.rt-recordText{color:var(--dsw-alias-label-secondary);font-size:12.5px;line-height:17px;overflow-wrap:anywhere}
+.rt-recordMd{color:var(--dsw-alias-label-secondary);font-size:12.5px;line-height:18px;overflow-wrap:anywhere}
+.rt-recordEmpty{color:var(--dsw-alias-label-caption);font-size:12.5px;line-height:17px;font-style:italic}
+.rt-recordItems{border-left:2px solid var(--dsw-alias-border-l1);padding-left:8px;display:flex;flex-direction:column;gap:1px}
+.rt-recordSources{display:flex;flex-direction:column;gap:3px}
+.rt-recordSource{color:var(--dsw-alias-state-business-primary);font-size:12.5px;line-height:17px;overflow-wrap:anywhere;text-decoration:none}
+.rt-recordSource:hover{text-decoration:underline}`;
 		const tagId = "dsh-rich-tracking/board.css";
 		if (typeof document !== "undefined" && document.querySelector('style[data-plugin-css="' + tagId + '"]') === null) {
 			const tag = document.createElement("style");
@@ -305,8 +349,8 @@ window.__ModuleLoader__.load({
 				})
 			});
 		}
-		/** One board row: glyph, label, mini progressbar, percent, hover-revealed pursue/align/dismiss. Rows carrying `items` expand on click/Enter to show the acceptance checklist — done items grey + strikethrough, open items primary. */
-		function BoardRow({ row, busy, onAction, t }) {
+		/** One board row: glyph, label, mini progressbar, percent, hover-revealed record "?" + pursue/delegate/align/dismiss. Rows carrying `items` expand on click/Enter to show the acceptance checklist — done items grey + strikethrough, open items primary. */
+		function BoardRow({ row, busy, onAction, onRecord, t }) {
 			const [open, setOpen] = (0, react.useState)(false);
 			const items = Array.isArray(row.items) ? row.items : [];
 			const hasItems = items.length > 0;
@@ -371,6 +415,13 @@ window.__ModuleLoader__.load({
 					(0, react_jsx_runtime.jsxs)("span", {
 						className: "rt-rowActions",
 						children: [
+							(0, react_jsx_runtime.jsx)(ActionButton, {
+								label: t("row.record.open"),
+								hint: t("row.record.hint"),
+								disabled: busy,
+								onClick: () => onRecord(row),
+								children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconQuestionOutline14, {})
+							}),
 							(0, react_jsx_runtime.jsx)(ActionButton, {
 								label: t("action.pursue"),
 								hint: t("action.pursue.hint"),
@@ -437,6 +488,118 @@ window.__ModuleLoader__.load({
 			});
 		}
 		//#endregion
+		//#region lib/RowRecordDialog.js
+		/**
+		 * The row's full record dialog (v0.4): everything tracking_write can say
+		 * about ONE row — status line, latest note, evidence basis, the long-form
+		 * detail (markdown), the acceptance checklist, and clickable sources —
+		 * the "?" affordance on each row. Modal over the dock (scrim + card, the
+		 * Tracks-panel grammar), Escape / scrim click / close button dismiss it.
+		 */
+		function RowRecordDialog({ row, revision, onClose, t }) {
+			(0, react.useEffect)(() => {
+				const onKey = (event) => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } };
+				document.addEventListener("keydown", onKey, true);
+				return () => document.removeEventListener("keydown", onKey, true);
+			}, [onClose]);
+			const items = Array.isArray(row.items) ? row.items : [];
+			const doneCount = items.filter((item) => item.done === true).length;
+			const sources = Array.isArray(row.sources) ? row.sources : [];
+			const hasDetail = typeof row.detail === "string" && row.detail.trim() !== "";
+			return (0, react_jsx_runtime.jsx)("div", {
+				className: "rt-scrim",
+				onClick: (event) => { if (event.target === event.currentTarget) onClose(); },
+				children: (0, react_jsx_runtime.jsxs)("div", {
+					className: "rt-record",
+					role: "dialog",
+					"aria-modal": "true",
+					"aria-label": `${row.label} — ${t("record.title")}`,
+					children: [
+						(0, react_jsx_runtime.jsxs)("div", {
+							className: "rt-recordHead",
+							children: [
+								(0, react_jsx_runtime.jsx)(RowGlyph, { status: row.status }),
+								(0, react_jsx_runtime.jsx)("span", { className: "rt-recordTitle", children: row.label }),
+								(0, react_jsx_runtime.jsx)("span", { className: "rt-recordPct", children: `${row.percent}%` }),
+								(0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "rt-iconBtn rt-recordClose",
+									"aria-label": t("row.record.close") ?? undefined,
+									autoFocus: true,
+									onClick: onClose,
+									children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCloseOutline16, {})
+								})
+							]
+						}),
+						(0, react_jsx_runtime.jsxs)("div", {
+							className: "rt-recordBody",
+							children: [
+								(0, react_jsx_runtime.jsx)("span", { className: "rt-recordMeta", children: `${row.id} · board r${revision} · ${row.status}` }),
+								row.note !== undefined ? (0, react_jsx_runtime.jsxs)("div", {
+									className: "rt-recordSection",
+									children: [
+										(0, react_jsx_runtime.jsx)("span", { className: "rt-recordLabel", children: t("record.note") }),
+										(0, react_jsx_runtime.jsx)("span", { className: "rt-recordText", children: row.note })
+									]
+								}) : null,
+								row.evidence !== undefined ? (0, react_jsx_runtime.jsxs)("div", {
+									className: "rt-recordSection",
+									children: [
+										(0, react_jsx_runtime.jsx)("span", { className: "rt-recordLabel", children: t("record.evidence") }),
+										(0, react_jsx_runtime.jsx)("span", { className: "rt-recordText", children: row.evidence })
+									]
+								}) : null,
+								(0, react_jsx_runtime.jsxs)("div", {
+									className: "rt-recordSection",
+									children: [
+										(0, react_jsx_runtime.jsx)("span", { className: "rt-recordLabel", children: t("record.detail") }),
+										hasDetail === true
+											? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.MarkdownText, { text: row.detail, className: "rt-recordMd" })
+											: (0, react_jsx_runtime.jsx)("span", { className: "rt-recordEmpty", children: t("record.empty") })
+									]
+								}),
+								items.length > 0 ? (0, react_jsx_runtime.jsxs)("div", {
+									className: "rt-recordSection",
+									children: [
+										(0, react_jsx_runtime.jsx)("span", { className: "rt-recordLabel", children: `${t("record.items")} · ${doneCount}/${items.length}` }),
+										(0, react_jsx_runtime.jsx)("span", {
+											className: "rt-recordItems",
+											children: items.map((item, index) => (0, react_jsx_runtime.jsxs)("span", {
+												className: cx("rt-item", item.done === true ? "rt-itemDone" : "rt-itemOpen"),
+												children: [
+													(0, react_jsx_runtime.jsx)("span", { className: "rt-itemGlyph", children: item.done === true ? (0, react_jsx_runtime.jsx)(CompletedGlyph, {}) : (0, react_jsx_runtime.jsx)(PendingGlyph, {}) }),
+													(0, react_jsx_runtime.jsx)("span", { className: "rt-itemLabel", children: item.label })
+												]
+											}, index))
+										})
+									]
+								}) : null,
+								sources.length > 0 ? (0, react_jsx_runtime.jsxs)("div", {
+									className: "rt-recordSection",
+									children: [
+										(0, react_jsx_runtime.jsx)("span", { className: "rt-recordLabel", children: t("record.sources") }),
+										(0, react_jsx_runtime.jsx)("span", {
+											className: "rt-recordSources",
+											children: sources.map((source, index) => {
+												const href = /^https?:\/\//i.test(source) === true ? source : null;
+												return (0, react_jsx_runtime.jsx)("a", {
+													className: "rt-recordSource",
+													href: href ?? undefined,
+													target: href !== null ? "_blank" : undefined,
+													rel: "noreferrer noopener",
+													children: source
+												}, index);
+											})
+										})
+									]
+								}) : null
+							]
+						})
+					]
+				})
+			});
+		}
+		//#endregion
 		//#region lib/TrackingDock.js
 		/**
 		 * The scoreboard dock entry (order 5): renders the host-computed
@@ -458,6 +621,7 @@ window.__ModuleLoader__.load({
 			const [expanded, setExpanded] = (0, react.useState)(false);
 			const [now, setNow] = (0, react.useState)(Date.now());
 			const [fallbackView, setFallbackView] = (0, react.useState)(null);
+			const [recordRow, setRecordRow] = (0, react.useState)(null);
 			const view = projected !== null && projected !== undefined && projected.present === true
 				? projected
 				: fallbackView;
@@ -473,7 +637,7 @@ window.__ModuleLoader__.load({
 			}, [sessionId]);
 			const present = view !== null && view !== undefined && view.present === true;
 			(0, react.useEffect)(() => {
-				if (present !== true) { setExpanded(false); setError(null); setDelivered(null); }
+				if (present !== true) { setExpanded(false); setError(null); setDelivered(null); setRecordRow(null); }
 			}, [present]);
 			(0, react.useEffect)(() => {
 				const timer = window.setInterval(() => setNow(Date.now()), 30_000);
@@ -548,6 +712,13 @@ window.__ModuleLoader__.load({
 											onClick: () => act("align"),
 											children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconBranchOutline16, {})
 										}),
+										view.allDone === true ? null : (0, react_jsx_runtime.jsx)(ActionButton, {
+											label: t("action.scout"),
+											hint: t("action.scout.hint"),
+											disabled: busy !== null,
+											onClick: () => act("scout"),
+											children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSearchOutline16, {})
+										}),
 										(0, react_jsx_runtime.jsx)(ActionButton, {
 											label: t("action.checkpoint"),
 											hint: t("action.checkpoint.hint"),
@@ -572,14 +743,15 @@ window.__ModuleLoader__.load({
 							className: "rt-list",
 							role: "region",
 							"aria-label": t("title"),
-							children: view.rows.map((row) => (0, react_jsx_runtime.jsx)(BoardRow, { row, busy: busy !== null, onAction: act, t }, row.id))
+							children: view.rows.map((row) => (0, react_jsx_runtime.jsx)(BoardRow, { row, busy: busy !== null, onAction: act, onRecord: setRecordRow, t }, row.id))
 						}) : null,
 						expanded && view.lastCheckpoint !== undefined ? (0, react_jsx_runtime.jsx)(CheckpointStrip, { view, t }) : null,
 						error !== null ? (0, react_jsx_runtime.jsx)("span", {
 							className: "rt-status rt-statusError",
 							role: "alert",
 							children: error === "session-offline" ? t("error.offline") : `${t("error.generic")}: ${error}`
-						}) : null
+						}) : null,
+						recordRow !== null ? (0, react_jsx_runtime.jsx)(RowRecordDialog, { row: recordRow, revision: view.revision, onClose: () => setRecordRow(null), t }) : null
 					]
 				})
 			});

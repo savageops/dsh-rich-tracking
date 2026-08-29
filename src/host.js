@@ -17,7 +17,7 @@ import { execFile } from 'node:child_process'
 import { readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { boardView, foldTracking, lastTrackingEvent, ledgerContext, nextCheckpointId, nextRevision, overallPercentOf, validateBoard } from './tracking-engine.js'
+import { boardView, foldTracking, lastTrackingEvent, ledgerContext, nextCheckpointId, nextRevision, overallPercentOf, researchContext, validateBoard } from './tracking-engine.js'
 
 const API_PREFIX = '/api/rich-tracking'
 /** Refresh cadence (design §10.2, operator-decided v1): 8 assistant steps OR 6k output tokens since the last write. */
@@ -181,7 +181,11 @@ async function foldSessionFile(file) {
  * @returns the boardView (may be present:false), or null when no log exists.
  */
 async function storedBoardFor(sessionId) {
-  if (typeof sessionId !== 'string' || sessionId === '') return null
+  // Path-shape guard: sessionId joins into a filesystem path, so anything
+  // that could traverse (slashes, dot-dot) is rejected before the join —
+  // the endpoint is loopback+same-origin, but this surface must not become
+  // a file-existence probe for arbitrary paths.
+  if (typeof sessionId !== 'string' || sessionId === '' || /[/\\]|\.\./.test(sessionId)) return null
   let slugDirs = []
   try { slugDirs = readdirSync(SESSIONS_ROOT) } catch { return null }
   for (const slug of slugDirs) {
@@ -289,6 +293,8 @@ Checkpoints: when the operator says "take a checkpoint" / "checkpoint", call tra
 Update cadence — living ledger: call tracking_write after EVERY completed task, step, or todo whose artifact truth changed (refreshed percents and item flags), and update the row prose (label, note, evidence, items) whenever the underlying details shift. The board always describes current reality, not a milestone snapshot.
 /track: the operator's chat command forces a ledger sync — it injects the full ledger plus this doctrine into your next step; re-derive from artifacts, correct the board, then continue with the work. While a board is live, every user submit also carries a compact board reminder; do not recite it to the user.
 Delegation: when the operator presses DELEGATE on a row (or asks to delegate), hand that row to a background subagent with read/write access — self-contained brief (row details, items, evidence, progress), scoped strictly to that row's task and subtasks, and the subagent tracks its own progress with tracking_write in its own session. Fold its receipts back into the row when its report lands.
+Row records: rows may carry detail — a long-form record (<= 4000 chars, plain text/markdown) the operator reads in the row's "?" dialog: the summary of what is done, the details of what still to do, key decisions, open questions, scouted competitive knowledge. The board note stays the one-line status; the detail narrates the row — keep it current whenever the row's story changes. Rows may also carry sources — up to 12 reference links/paths (competitor docs, your written digests, receipts) shown clickable in that dialog.
+Scout: when the operator presses SCOUT (or asks for competitive research), a SCOUT FAN-OUT brief arrives as an instruction: delegate one background research subagent per open row, each studying 3-6 competitors or comparable implementations for exactly that row's problem and returning findings CONDENSED; keep working while they run; write durable digests (.docs/digest/, .docs/research/ — research that is not written down did not happen); then tracking_write the rows with enriched detail + sources. Research is context, not progress — bump a row's percent ONLY when artifact truth actually changed.
 The board re-derives, it never narrates: after the operator presses ALIGN, recompute every percent from the named artifacts before writing again.`
 
 /** Message factory (dsh-llm shape, inlined zero-dep per design D8). Content is a block array — a plain string renders as per-character unknown blocks. */
@@ -385,11 +391,21 @@ function trackingWriteTool() {
           },
         },
       },
+      detail: {
+        type: 'string',
+        description: "Optional, <= 4000 chars: the row's full record for the operator's '?' dialog — summary of what is done, details of what still to do, key decisions, open questions, scouted competitive knowledge. Plain text/markdown. Keep it current whenever the row's story changes; the board note stays the one-line status, the detail narrates the row.",
+      },
+      sources: {
+        type: 'array',
+        maxItems: 12,
+        description: "Optional, up to 12 reference links/paths backing the row (competitor docs, research digests, receipts) — rendered clickable in the row's '?' dialog.",
+        items: { type: 'string', description: 'One URL or file path, <= 300 chars.' },
+      },
     },
   }
   return {
     name: 'tracking_write',
-    description: "Record and update the session's percent-progress scoreboard (the macro tracking board the operator watches above the chat input; todo_write stays the micro plan for the current turn). Send the ENTIRE board every call — it REPLACES the previous board. Rows: 1-12 (aim 3-7). percent is an integer 0-100 derived from artifact truth: the fraction of that row's acceptance items (plan checkboxes, landed receipts, verified boxes) that hold right now — never an impression. Every row with percent >= 1 MUST carry evidence naming that basis (paths + checked/total). percent 100 requires every acceptance item checked AND the owning receipt to exist. A row at 100 dims but stays visible until every row is 100. Rows may carry items — a 1-20 entry acceptance checklist [{label, done}] the operator expands by clicking the row (done items grey out, open items stay readable); when items are present, percent MUST equal round(done/total x 100) and validation rejects a mismatch, so the visible checklist always adds up to the shown percent. Overall completion is item-weighted: each item is one unit, itemless rows contribute their percent as one unit. Calling this after a dismissal re-opens the board.",
+    description: "Record and update the session's percent-progress scoreboard (the macro tracking board the operator watches above the chat input; todo_write stays the micro plan for the current turn). Send the ENTIRE board every call — it REPLACES the previous board. Rows: 1-12 (aim 3-7). percent is an integer 0-100 derived from artifact truth: the fraction of that row's acceptance items (plan checkboxes, landed receipts, verified boxes) that hold right now — never an impression. Every row with percent >= 1 MUST carry evidence naming that basis (paths + checked/total). percent 100 requires every acceptance item checked AND the owning receipt to exist. A row at 100 dims but stays visible until every row is 100. Rows may carry items — a 1-20 entry acceptance checklist [{label, done}] the operator expands by clicking the row (done items grey out, open items stay readable); when items are present, percent MUST equal round(done/total x 100) and validation rejects a mismatch, so the visible checklist always adds up to the shown percent. Overall completion is item-weighted: each item is one unit, itemless rows contribute their percent as one unit. Rows may also carry detail — a <= 4000-char full record (what is done, what remains, key decisions, scouted knowledge) the operator reads in the row's '?' dialog — and sources — up to 12 reference links/paths shown clickable there; keep both current. Calling this after a dismissal re-opens the board.",
     parameters: {
       type: 'object',
       required: ['rows'],
@@ -419,6 +435,8 @@ function trackingWriteTool() {
                 note: { oneOf: [{ type: 'null' }, { type: 'string' }] },
                 evidence: { oneOf: [{ type: 'null' }, { type: 'string' }] },
                 items: { type: 'array', items: { type: 'object', required: ['label', 'done'], properties: { label: { type: 'string' }, done: { type: 'boolean' } } } },
+                detail: { type: 'string' },
+                sources: { type: 'array', items: { type: 'string' } },
               },
             },
           },
@@ -542,6 +560,12 @@ function trackingCheckpointTool() {
 
 /** Instruction texts (design §8.3, exact copy). */
 function instructionFor(kind, view, rowId) {
+  if (kind === 'scout') {
+    // The engine-built fan-out brief; null when there is nothing to scout
+    // (all rows done, or a scoped rowId that is done/absent) — the route
+    // answers that with a distinct error, not row-not-found.
+    return researchContext(view, rowId)
+  }
   if (kind === 'pursue') {
     const row = view?.rows.find((entry) => entry.id === rowId)
     if (row === undefined) return null
@@ -841,7 +865,7 @@ export function apply(ctx) {
           writeJson(res, 400, { ok: false, error: 'invalid-action' })
           return
         }
-        const kinds = new Set(['pursue', 'delegate', 'align', 'dismiss', 'dismiss-row', 'checkpoint-request', 'play', 'pause'])
+        const kinds = new Set(['pursue', 'delegate', 'scout', 'align', 'dismiss', 'dismiss-row', 'checkpoint-request', 'play', 'pause'])
         if (kinds.has(body.kind) === false) { writeJson(res, 400, { ok: false, error: 'unknown-action' }); return }
 
         const agent = ctx.agents.get(body.sessionId)
@@ -860,11 +884,14 @@ export function apply(ctx) {
           return
         }
         const instruction = instructionFor(body.kind, view, body.rowId)
-        if (instruction === null) { writeJson(res, 400, { ok: false, error: 'row-not-found' }); return }
+        if (instruction === null) {
+          writeJson(res, 400, { ok: false, error: body.kind === 'scout' ? 'nothing-to-scout: every row is done (or the scoped row is) — research is for open rows' : 'row-not-found' })
+          return
+        }
 
         agent.session.append('tracking/decision', { kind: body.kind, rowId: body.rowId ?? null, instruction, at: Date.now() })
 
-        const whip = body.kind === 'pursue' || body.kind === 'delegate' || body.kind === 'align' || body.kind === 'checkpoint-request' || body.kind === 'play' || body.kind === 'pause'
+        const whip = body.kind === 'pursue' || body.kind === 'delegate' || body.kind === 'scout' || body.kind === 'align' || body.kind === 'checkpoint-request' || body.kind === 'play' || body.kind === 'pause'
         if (whip === true) {
           const message = createPluginMessage(instruction, 'steer', `${body.kind}${body.rowId !== undefined && body.rowId !== null ? ` ${body.rowId}` : ''}`)
           if (agent.status === 'running') agent.steer(message)

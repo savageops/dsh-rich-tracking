@@ -1,4 +1,36 @@
 
+# v0.4 — Row records + Scout: long context and the research fan-out
+
+Two operator asks, one wave strategy (engine → host → client → tests → docs,
+the v0.2/v0.3 pattern):
+
+**Long-context rows.** note (200) and evidence (300) carry one-liners; a row's
+full story did not fit anywhere. Rows now carry `detail` (≤ 4000 chars,
+markdown-ish: what is done, what remains, key decisions, scouted knowledge)
+and `sources` (≤ 12 links/paths, HTTP ones clickable). The dock grows a "?"
+button per row (leftmost hover action, `IconQuestionOutline14` — the
+rich-questions insight affordance) opening a full-record dialog (scrim + card,
+the Tracks-panel grammar): status line, note, evidence, detail rendered through
+the primitives' MarkdownText, the item checklist, and the source list. The
+injected ledger stays bounded: ledgerContext emits only presence markers
+(`— detail: 1200 chars · — sources: 2`), never the text.
+
+**Scout.** The board-level twin of rich-questions' Push: a header button
+(`IconSearchOutline16`, hidden at allDone) that whips the agent with an
+engine-built fan-out brief — `researchContext(view, rowId?)`, pure and
+unit-tested beside ledgerContext: one background research subagent per OPEN
+row (done rows excluded; rowId scopes to one), each studying 3-6 competitors
+or comparable implementations, findings condensed, durable digests to
+`.docs/digest/` or `.docs/research/`, then a tracking_write enriching detail +
+sources. The brief's guardrail is load-bearing: research is context, not
+progress — percents move only when artifact truth moved. A scout on an
+all-done board answers 400 `nothing-to-scout` instead of a silent no-op.
+
+Deployment note (this machine): the live profile installs plugins from GitHub
+as plain directories; local verification copies the four files into
+`~/.dsh/profiles/web/node_modules/dsh-rich-tracking/` and restarts `dsh web`
+(plugin/host code and the client bundle load only at process boot).
+
 # v0.3 — Tracks: every board, every workspace
 
 New sidebar entry "Tracks" (ideas-entry family, self-healing injection, last

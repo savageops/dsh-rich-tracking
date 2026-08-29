@@ -29,6 +29,9 @@ export const LIMITS = {
   maxItemLabel: 120,
   maxBoardNote: 200,
   maxCheckpointLabel: 60,
+  maxDetail: 4000,
+  maxSources: 12,
+  maxSourceLength: 300,
 }
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/
@@ -113,6 +116,27 @@ export function validateBoard(raw) {
         }
       }
     }
+    // Long-context record (v0.4): the row's full story for the operator's
+    // "?" dialog — summaries of completed work, details of what remains,
+    // key decisions. The note stays the one-line status; the detail narrates.
+    if (row.detail !== undefined && (typeof row.detail !== 'string' || row.detail.length > LIMITS.maxDetail)) {
+      fail(`${where}.detail must be a string <= ${LIMITS.maxDetail} characters (the row's full record: what is done, what remains, key decisions)`)
+    }
+    // Sources (v0.4): reference links/paths backing the row — competitor
+    // docs, research digests, receipts. Rendered clickable in the dialog.
+    if (row.sources !== undefined) {
+      if (Array.isArray(row.sources) === false || row.sources.length === 0) {
+        fail(`${where}.sources must be a non-empty array (1-${LIMITS.maxSources}) of reference strings when provided`)
+      } else if (row.sources.length > LIMITS.maxSources) {
+        fail(`${where}.sources has ${row.sources.length} entries (limit ${LIMITS.maxSources})`)
+      } else {
+        row.sources.forEach((source, sourceIndex) => {
+          const at = `${where}.sources[${sourceIndex}]`
+          if (typeof source !== 'string' || source.trim() === '') fail(`${at} must be a non-empty string (URL or file path)`)
+          else if (source.length > LIMITS.maxSourceLength) fail(`${at} exceeds ${LIMITS.maxSourceLength} characters`)
+        })
+      }
+    }
     // Status consistency (design §6.1 rule 3).
     if (typeof row.percent === 'number' && Number.isInteger(row.percent)) {
       const effective = deriveStatus(row.percent, row.status)
@@ -139,6 +163,8 @@ export function validateBoard(raw) {
     ...(Array.isArray(row.items) && row.items.length > 0
       ? { items: row.items.map((item) => ({ label: item.label, done: item.done === true })) }
       : {}),
+    ...(row.detail !== undefined && row.detail !== '' ? { detail: row.detail } : {}),
+    ...(Array.isArray(row.sources) && row.sources.length > 0 ? { sources: [...row.sources] } : {}),
   }))
   return { ok: true, board: { rows: clean, note: typeof raw.note === 'string' && raw.note !== '' ? raw.note : null } }
 }
@@ -308,8 +334,42 @@ export function ledgerContext(view) {
       : ''
     const basis = row.evidence !== undefined ? ` — basis: ${row.evidence}` : ''
     const note = row.note !== undefined ? ` — note: ${row.note}` : ''
+    // Presence markers only: the detail is the operator's dialog content and
+    // can be 4k chars per row — the injected ledger stays bounded by naming
+    // the size, not the text.
+    const detail = row.detail !== undefined ? ` — detail: ${row.detail.length} chars` : ''
+    const sources = Array.isArray(row.sources) && row.sources.length > 0 ? ` — sources: ${row.sources.length}` : ''
     const status = row.status ?? deriveStatus(row.percent)
-    return `- ${row.label} (${row.id}): ${row.percent}% ${status}${items}${basis}${note}`
+    return `- ${row.label} (${row.id}): ${row.percent}% ${status}${items}${basis}${note}${detail}${sources}`
   }).join('\n')
   return `TRACKING LEDGER (revision r${view.revision}, overall ${view.overallPercent}%, ${view.doneCount}/${view.rows.length} rows done):\n${rows}\n\nRe-derive this ledger now: read the artifacts each row names (documentation, code, receipts, user context), recompute percent as checked/total — never from impression — fix any stale items or prose (labels, notes, evidence must describe current reality), then call tracking_write with the corrected board. Afterward keep the ledger living: update percents and item flags after every completed step, and refresh the prose whenever the underlying details change.`
+}
+
+/**
+ * The scout brief (pure, v0.4): the competitive-research fan-out the agent
+ * acts on when the operator presses SCOUT — one background research subagent
+ * per open row, each comparing 3-6 competitors, knowledge folded back
+ * condensed into the rows' detail + sources. Done rows are excluded (they
+ * need no competitive research); a rowId scopes the brief to that one row.
+ * Returns null when there is nothing to scout: no live board, all rows done,
+ * or a scoped rowId that is done or absent.
+ */
+export function researchContext(view, rowId) {
+  if (view === null || view.present !== true) return null
+  const scoped = rowId !== undefined && rowId !== null
+  const targets = scoped
+    ? view.rows.filter((row) => row.id === rowId && row.percent < 100)
+    : view.rows.filter((row) => row.percent < 100)
+  if (targets.length === 0) return null
+  const roster = targets.map((row) => {
+    const items = Array.isArray(row.items) && row.items.length > 0
+      ? ` — items: ${row.items.map((item) => `${item.done === true ? '[x]' : '[ ]'} ${item.label}`).join('; ')}`
+      : ''
+    const basis = row.evidence !== undefined ? ` — basis: ${row.evidence}` : ''
+    const note = row.note !== undefined ? ` — note: ${row.note}` : ''
+    const status = row.status ?? deriveStatus(row.percent)
+    return `- "${row.label}" (${row.id}): ${row.percent}% ${status}${items}${basis}${note}`
+  }).join('\n')
+  const scope = scoped ? 'this one row' : 'each open row'
+  return `SCOUT FAN-OUT (tracking board r${view.revision}, ${targets.length} open row(s) to research):\n${roster}\n\nThe operator pressed SCOUT: they want competitive knowledge folded into the board before more work happens. For ${scope}, delegate one background research subagent (your subagent tool, run_in_background) with a self-contained brief: study 3-6 competitors or comparable implementations for exactly this row's problem — what each does differently, its approach, its key tradeoff, and what it got right that we have not — and return the findings CONDENSED (digests, not walls of text). Keep working while they run; fold each report in as it lands. Then call tracking_write and enrich every researched row: detail (<= ${LIMITS.maxDetail} chars — the row's full record: what is done, what remains, and now the competitive picture with the decisive tradeoffs) and sources (up to ${LIMITS.maxSources} links/paths — competitor docs, your written digests, receipts; write durable digests to .docs/digest/ or .docs/research/ first, research that is not written down did not happen). Bump a row's percent ONLY if artifact truth actually changed — research is context, not progress.`
 }
