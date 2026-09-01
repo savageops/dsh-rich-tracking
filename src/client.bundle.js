@@ -625,10 +625,15 @@ window.__ModuleLoader__.load({
 			const view = projected !== null && projected !== undefined && projected.present === true
 				? projected
 				: fallbackView;
-			(0, react.useEffect)(() => {
+						(0, react.useEffect)(() => {
 				let cancelled = false;
 				setFallbackView(null);
 				if (sessionId === undefined) return () => { cancelled = true; };
+				// Persistence fallback ONLY when the projection face is absent:
+				// fetching it on every mount while the live projection already
+				// supplies the view paid a zstd log decompress per session open
+				// for a result the projection then overrode anyway.
+				if (projected !== null && projected !== undefined) return () => { cancelled = true; };
 				fetch(`${API}/board?sessionId=${encodeURIComponent(sessionId)}`, { cache: "no-store" })
 					.then((res) => (res.ok ? res.json() : null))
 					.then((body) => { if (cancelled !== true && body?.ok === true && body.present === true) setFallbackView(body.view ?? null); })

@@ -286,16 +286,13 @@ const TRACKING_EVENT_TYPES = Object.freeze([
  * Percent-honesty doctrine (design §11): the board is a commitment device —
  * the operator reads it as a lie detector, so every percent names its basis.
  */
-const ANNOUNCEMENT = `dsh-rich-tracking plugin installed (progress scoreboard): the macro percent board the operator watches below the todo pill. todo_write stays the micro plan for the CURRENT turn (it resets every turn); tracking_write is the MISSION scoreboard — waves, milestones, multi-turn objectives — and survives across turns until every row is 100 or the operator dismisses the board.
-When to create a board: the operator asks for a scoreboard, waves, or progress tracking, or a mission visibly spans many turns (e.g. a multi-wave build plan). Map rows to the plan's real workstreams (3-7 rows ideal, 12 max; e.g. one row per wave).
-Write contract: send the ENTIRE board every call — it REPLACES the previous one. percent is an integer 0-100 derived from artifact truth: (acceptance items that hold right now) / (total acceptance items) in the row's owning artifacts — plan checkboxes, landed receipts, verified readbacks. 100 only when every item is checked AND the owning receipt exists. Every row with percent >= 1 MUST carry evidence naming that basis (paths + checked/total, e.g. '.docs/GOAL.md W2 snapshot + .docs/qc/: 9/14 receipts'). A percent without evidence is a fabrication; validation rejects it and the operator reads the board as a lie detector. Rows may carry items — a 1-20 entry acceptance checklist [{label, done}] the operator expands by clicking the row; when items are present, percent must equal round(done/total x 100) (validation rejects a mismatch) and the checklist becomes the row's visible inner progress. Overall completion is item-weighted (each item one unit; itemless rows contribute their percent as one unit). Keep a row's percent unchanged when its truth did not change. Update the board after material progress, a verified blocker, or when the operator acts on a row (pursue/align land as instructions naming the row).
-Checkpoints: when the operator says "take a checkpoint" / "checkpoint", call tracking_checkpoint — the HOST captures git branch/HEAD/dirty state plus the frozen board; never type git facts yourself.
-Update cadence — living ledger: call tracking_write after EVERY completed task, step, or todo whose artifact truth changed (refreshed percents and item flags), and update the row prose (label, note, evidence, items) whenever the underlying details shift. The board always describes current reality, not a milestone snapshot.
-/track: the operator's chat command forces a ledger sync — it injects the full ledger plus this doctrine into your next step; re-derive from artifacts, correct the board, then continue with the work. While a board is live, every user submit also carries a compact board reminder; do not recite it to the user.
-Delegation: when the operator presses DELEGATE on a row (or asks to delegate), hand that row to a background subagent with read/write access — self-contained brief (row details, items, evidence, progress), scoped strictly to that row's task and subtasks, and the subagent tracks its own progress with tracking_write in its own session. Fold its receipts back into the row when its report lands.
-Row records: rows may carry detail — a long-form record (<= 4000 chars, plain text/markdown) the operator reads in the row's "?" dialog: the summary of what is done, the details of what still to do, key decisions, open questions, scouted competitive knowledge. The board note stays the one-line status; the detail narrates the row — keep it current whenever the row's story changes. Rows may also carry sources — up to 12 reference links/paths (competitor docs, your written digests, receipts) shown clickable in that dialog.
-Scout: when the operator presses SCOUT (or asks for competitive research), a SCOUT FAN-OUT brief arrives as an instruction: delegate one background research subagent per open row, each studying 3-6 competitors or comparable implementations for exactly that row's problem and returning findings CONDENSED; keep working while they run; write durable digests (.docs/digest/, .docs/research/ — research that is not written down did not happen); then tracking_write the rows with enriched detail + sources. Research is context, not progress — bump a row's percent ONLY when artifact truth actually changed.
-The board re-derives, it never narrates: after the operator presses ALIGN, recompute every percent from the named artifacts before writing again.`
+const ANNOUNCEMENT = `dsh-rich-tracking (progress scoreboard): the macro percent board the operator watches below the todo pill. todo_write is the micro plan for the CURRENT turn (it resets every turn); tracking_write is the MISSION scoreboard — waves, milestones, multi-turn objectives — surviving across turns until every row is 100 or the operator dismisses the board. Create one when the operator asks for a scoreboard/waves/tracking, or the work visibly spans many turns; map rows to the plan's real workstreams (3-7 ideal, 12 max).
+Write contract (the tracking_write description carries the full rules): whole-board replace every call; percent = artifact truth — acceptance items holding now / total, never impression; evidence required at percent >= 1; items checklists must add up to the percent. A percent without evidence is a fabrication; the operator reads the board as a lie detector.
+Cadence — living ledger: tracking_write after EVERY completed task, step, or todo whose artifact truth changed (refreshed percents and item flags), and refresh the row prose (note, evidence, items, detail) whenever the underlying details shift. The board describes current reality, not a milestone snapshot.
+Checkpoints: when the operator says "take a checkpoint", call tracking_checkpoint — the HOST captures git branch/HEAD/dirty plus the frozen board; never type git facts yourself.
+Operator actions land as instructions naming the row: PURSUE (make it the next focus), ALIGN (re-derive every percent from the named artifacts before writing again), DELEGATE (hand the row to a background subagent with a self-contained brief; it tracks its own board in its session; fold its receipts back into the row), SCOUT (fan out one background research subagent per open row — 3-6 competitors each, findings CONDENSED into durable digests .docs/digest/ .docs/research/ — then enrich the rows' detail + sources; research is context, not progress: bump a percent only when artifact truth actually changed).
+Row records: rows may carry detail — a long-form record (<= 4000 chars: what is done, what remains, key decisions, scouted knowledge) the operator reads in the row's "?" dialog — and sources (up to 12 reference links/paths, clickable there). The note stays the one-line status; the detail narrates the row. Keep both current.
+/track: the operator's forced ledger sync — it injects the full ledger plus this doctrine; re-derive from artifacts, correct the board, then continue. While a board is live, every user submit carries a compact board reminder; do not recite it to the user.`
 
 /** Message factory (dsh-llm shape, inlined zero-dep per design D8). Content is a block array — a plain string renders as per-character unknown blocks. */
 function createPluginMessage(text, form, summary) {
@@ -432,11 +429,6 @@ function trackingWriteTool() {
                 label: { type: 'string' },
                 percent: { type: 'integer' },
                 status: { type: 'string', enum: ['pending', 'active', 'blocked', 'done'] },
-                note: { oneOf: [{ type: 'null' }, { type: 'string' }] },
-                evidence: { oneOf: [{ type: 'null' }, { type: 'string' }] },
-                items: { type: 'array', items: { type: 'object', required: ['label', 'done'], properties: { label: { type: 'string' }, done: { type: 'boolean' } } } },
-                detail: { type: 'string' },
-                sources: { type: 'array', items: { type: 'string' } },
               },
             },
           },
@@ -478,8 +470,12 @@ function trackingWriteTool() {
       const lastCheckpoint = lastTrackingEvent(ownEvents(session), 'tracking/checkpoint')?.data ?? null
       const ahead = await commitsAheadOf(lastCheckpoint, gitState?.head ?? null, cwd)
       session.append('tracking/write', { revision, rows: check.board.rows, note: check.board.note, git: gitState, commitsAhead: ahead, at: Date.now() })
+      // The echo is an ACKNOWLEDGEMENT, not a mirror: the model just sent the
+      // whole board (items, evidence, up-to-4k details) seconds ago — echoing
+      // it back costs that many tokens on every living-ledger write. One
+      // line per row is enough to confirm the fold.
       return {
-        rows: check.board.rows,
+        rows: check.board.rows.map((row) => ({ id: row.id, label: row.label, percent: row.percent, status: row.status })),
         overallPercent: overallPercentOf(check.board.rows),
         counts: {
           done: check.board.rows.filter((row) => row.status === 'done').length,
@@ -686,11 +682,12 @@ function installRefreshReminder(ctx) {
     if (event?.data?.reason?.kind !== 'completed') return
     const agent = ctx.agents.get(session.id)
     if (agent === undefined) return
-    // Read the board from the session's OWN (post-seed) event log — children
-    // never engage a parent's inherited board.
-    let state = null
-    for (const e of ownEvents(session)) state = foldTracking(state, e)
-    const view = boardView(state)
+    // Read the board from the incrementally-maintained runtime fold (the
+    // session/event listener above keeps it current on every tracking event)
+    // — a full log re-fold per completed turn is O(events) on the hottest
+    // hook in the loop. Children never engage a parent's inherited board:
+    // the runtime folds the session's OWN (post-seed) events only.
+    const view = boardView(runtimeOf(session).state)
     if (view === null || view.present !== true) return
     if (view.playMode !== true) return
     if (view.allDone === true) return
@@ -714,9 +711,10 @@ function installRefreshReminder(ctx) {
     const timer = setTimeout(() => {
       engageTimers.delete(session.id)
       try {
-        let fireState = null
-        for (const e of ownEvents(agent.session)) fireState = foldTracking(fireState, e)
-        const fireView = boardView(fireState)
+        // Re-read at fire through the same maintained fold (pause/dismiss
+        // inside the window must win); delivers only if the agent is still
+        // idle (never steers the operator's fresh turn).
+        const fireView = boardView(runtimeOf(agent.session).state)
         if (fireView === null || fireView.present !== true || fireView.playMode !== true || fireView.allDone === true) return
         if (agent.status !== 'idle') return
         agent.followup(message)
